@@ -1,0 +1,234 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center">
+    <h2><i class="bi bi-speedometer2 me-2"></i>Dashboard</h2>
+    <span class="text-muted"><i class="bi bi-clock me-1"></i>{{ now }}</span>
+</div>
+
+<!-- KPI Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-md-2">
+        <div class="card stat-card text-center p-3">
+            <div class="stat-icon text-primary"><i class="bi bi-people-fill"></i></div>
+            <div class="stat-value text-primary">{{ total_customers }}</div>
+            <div class="stat-label text-muted">Customers</div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card stat-card text-center p-3">
+            <div class="stat-icon text-success"><i class="bi bi-envelope-fill"></i></div>
+            <div class="stat-value text-success">{{ emails_sent }}</div>
+            <div class="stat-label text-muted">Emails Sent</div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card stat-card text-center p-3">
+            <div class="stat-icon text-info"><i class="bi bi-reply-fill"></i></div>
+            <div class="stat-value text-info">{{ response_rate }}%</div>
+            <div class="stat-label text-muted">Response Rate</div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card stat-card text-center p-3">
+            <div class="stat-icon text-danger"><i class="bi bi-fire"></i></div>
+            <div class="stat-value text-danger">{{ hot }}</div>
+            <div class="stat-label text-muted">Hot Leads</div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card stat-card text-center p-3">
+            <div class="stat-icon text-warning"><i class="bi bi-hourglass-split"></i></div>
+            <div class="stat-value text-warning">{{ pending_reviews }}</div>
+            <div class="stat-label text-muted">Pending Review</div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card stat-card text-center p-3">
+            <div class="stat-icon text-secondary"><i class="bi bi-search"></i></div>
+            <div class="stat-value text-secondary">{{ researched }}/{{ total_customers }}</div>
+            <div class="stat-label text-muted">Researched</div>
+        </div>
+    </div>
+</div>
+
+<!-- AI Intelligence Row -->
+<div class="row g-3 mb-4">
+    <div class="col-12">
+        <div class="card p-3">
+            <div class="d-flex justify-content-between align-items-center">
+                <h6 class="mb-0"><i class="bi bi-lightbulb me-2"></i>AI Intelligence</h6>
+                <a href="/ai-insights" class="btn btn-sm btn-outline-info">View All Insights</a>
+            </div>
+            <div class="row g-3 mt-1">
+                <div class="col-md-3 text-center">
+                    <div class="stat-value text-danger">{{ high_intent_count }}</div>
+                    <small class="text-muted">High Intent Leads</small>
+                </div>
+                <div class="col-md-3 text-center">
+                    <div class="stat-value text-warning">{{ upsell_candidates }}</div>
+                    <small class="text-muted">Upsell Ready</small>
+                </div>
+                <div class="col-md-3 text-center">
+                    <div class="stat-value text-info">{{ analyzed_count }}/{{ total_customers }}</div>
+                    <small class="text-muted">AI Analyzed</small>
+                </div>
+                <div class="col-md-3 text-center">
+                    <a href="/ai-insights" class="btn btn-info btn-sm">
+                        <i class="bi bi-lightbulb me-1"></i>Open AI Insights
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Pipeline -->
+    <div class="col-md-5">
+        <div class="card p-4 h-100">
+            <h5 class="mb-3"><i class="bi bi-funnel-fill me-2"></i>Sales Pipeline</h5>
+            <table class="table table-sm mb-0">
+                <thead><tr><th>Stage</th><th>Count</th><th colspan="2">Distribution</th></tr></thead>
+                <tbody>
+                {% for stage_num, stage_info in pipeline_stages.items()|sort %}
+                    {% set count = stage_counts.get(stage_num, 0) %}
+                    {% set pct = (count / total_customers * 100)|round|int if total_customers else 0 %}
+                    <tr>
+                        <td>{{ stage_badge(stage_num) }}</td>
+                        <td class="fw-bold">{{ count }}</td>
+                        <td style="width:50%"><div class="progress pipeline-bar"><div class="progress-bar" style="width:{{ pct }}%"></div></div></td>
+                        <td class="metric-mini">{{ pct }}%</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Customer Segmentation -->
+    <div class="col-md-4">
+        <div class="card p-4 h-100">
+            <h5 class="mb-3"><i class="bi bi-pie-chart-fill me-2"></i>Customer Segmentation</h5>
+            <div class="mb-2">
+                <div class="d-flex justify-content-between align-items-center p-2 engagement-card engagement-hot bg-white mb-2">
+                    <span><i class="bi bi-fire text-danger me-2"></i><strong>HOT</strong></span>
+                    <span class="badge bg-danger rounded-pill">{{ hot }}</span>
+                </div>
+                <div class="d-flex justify-content-between align-items-center p-2 engagement-card engagement-warm bg-white mb-2">
+                    <span><i class="bi bi-thermometer-half text-warning me-2"></i><strong>WARM</strong></span>
+                    <span class="badge bg-warning text-dark rounded-pill">{{ warm }}</span>
+                </div>
+                <div class="d-flex justify-content-between align-items-center p-2 engagement-card engagement-interested bg-white mb-2">
+                    <span><i class="bi bi-eye text-info me-2"></i><strong>INTERESTED</strong></span>
+                    <span class="badge bg-info rounded-pill">{{ interested }}</span>
+                </div>
+                <div class="d-flex justify-content-between align-items-center p-2 engagement-card engagement-cold bg-white mb-2">
+                    <span><i class="bi bi-snow text-secondary me-2"></i><strong>COLD</strong></span>
+                    <span class="badge bg-secondary rounded-pill">{{ cold }}</span>
+                </div>
+            </div>
+            {% if unsegmented > 0 %}
+            <p class="metric-mini mt-2">{{ unsegmented }} customers not yet segmented</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Quick Actions + Today -->
+    <div class="col-md-3">
+        <div class="card p-4 mb-3">
+            <h5 class="mb-3"><i class="bi bi-calendar-event me-2"></i>Today</h5>
+            <div class="d-flex justify-content-between mb-2">
+                <span class="text-muted">Emails Sent</span>
+                <strong>{{ today_sent }}</strong>
+            </div>
+            <div class="d-flex justify-content-between mb-2">
+                <span class="text-muted">Replies</span>
+                <strong>{{ today_replies }}</strong>
+            </div>
+            <div class="d-flex justify-content-between mb-2">
+                <span class="text-muted">Queued</span>
+                <strong>{{ emails_queued }}</strong>
+            </div>
+            <div class="d-flex justify-content-between">
+                <span class="text-muted">Daily Limit</span>
+                <strong>{{ today_sent }}/{{ max_emails_per_day }}</strong>
+            </div>
+        </div>
+        <div class="card p-4">
+            <h5 class="mb-3"><i class="bi bi-lightning-fill me-2"></i>Quick Actions</h5>
+            <div class="d-grid gap-2">
+                <a href="/customers" class="btn btn-outline-primary btn-sm"><i class="bi bi-people me-1"></i>Customers</a>
+                <a href="/research" class="btn btn-outline-success btn-sm"><i class="bi bi-search me-1"></i>Research</a>
+                <a href="/compose" class="btn btn-outline-info btn-sm"><i class="bi bi-pencil me-1"></i>Compose</a>
+                <a href="/workflow" class="btn btn-outline-warning btn-sm"><i class="bi bi-lightning me-1"></i>Run Workflow</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Row -->
+<div class="row g-4 mt-2">
+    <div class="col-md-8">
+        <div class="card p-4">
+            <h5 class="mb-3"><i class="bi bi-graph-up me-2"></i>Email Activity (Last 14 Days)</h5>
+            <canvas id="activityChart" height="120"></canvas>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card p-4">
+            <h5 class="mb-3"><i class="bi bi-pie-chart me-2"></i>Engagement Distribution</h5>
+            <canvas id="engagementChart" height="200"></canvas>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Email Activity Line Chart
+new Chart(document.getElementById('activityChart'), {
+    type: 'line',
+    data: {
+        labels: {{ chart_labels|safe }},
+        datasets: [{
+            label: 'Sent',
+            data: {{ chart_sent|safe }},
+            borderColor: '#198754',
+            backgroundColor: 'rgba(25,135,84,0.1)',
+            fill: true,
+            tension: 0.3
+        }, {
+            label: 'Replies',
+            data: {{ chart_replies|safe }},
+            borderColor: '#0dcaf0',
+            backgroundColor: 'rgba(13,202,240,0.1)',
+            fill: true,
+            tension: 0.3
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { position: 'top' } },
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+    }
+});
+
+// Engagement Pie Chart
+new Chart(document.getElementById('engagementChart'), {
+    type: 'doughnut',
+    data: {
+        labels: ['Hot', 'Warm', 'Interested', 'Cold'{% if unsegmented > 0 %}, 'Unsegmented'{% endif %}],
+        datasets: [{
+            data: [{{ hot }}, {{ warm }}, {{ interested }}, {{ cold }}{% if unsegmented > 0 %}, {{ unsegmented }}{% endif %}],
+            backgroundColor: ['#dc3545', '#fd7e14', '#0dcaf0', '#6c757d'{% if unsegmented > 0 %}, '#e9ecef'{% endif %}]
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { position: 'bottom' } }
+    }
+});
+</script>
+{% endblock %}

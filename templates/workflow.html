@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Workflow{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2><i class="bi bi-lightning me-2"></i>Automation Workflow</h2>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card p-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0"><i class="bi bi-play-circle me-2"></i>Workflow Engine</h5>
+                <button id="run-btn" class="btn btn-warning" onclick="startWorkflow()">
+                    <i class="bi bi-play-fill me-1"></i>Run Full Workflow
+                </button>
+            </div>
+            <div id="status-badge" class="mb-3"></div>
+            <div id="workflow-log" class="workflow-log">Ready to run. Click "Run Full Workflow" to start...
+
+This will:
+  1. Research pending customers (AI)
+  2. Check Gmail for replies
+  3. Generate auto-reply drafts
+  4. Update pipeline stages</div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card p-4 mb-3">
+            <h5><i class="bi bi-list-check me-2"></i>Workflow Steps</h5>
+            <div class="list-group list-group-flush">
+                <div class="list-group-item px-0 d-flex align-items-center">
+                    <span class="badge bg-primary rounded-pill me-2">1</span>
+                    <div><strong>AI Research</strong><br><small class="text-muted">Research pending customers</small></div>
+                </div>
+                <div class="list-group-item px-0 d-flex align-items-center">
+                    <span class="badge bg-success rounded-pill me-2">2</span>
+                    <div><strong>Email Tracking</strong><br><small class="text-muted">Check for new replies</small></div>
+                </div>
+                <div class="list-group-item px-0 d-flex align-items-center">
+                    <span class="badge bg-info rounded-pill me-2">3</span>
+                    <div><strong>Auto-Reply</strong><br><small class="text-muted">Generate draft responses</small></div>
+                </div>
+                <div class="list-group-item px-0 d-flex align-items-center">
+                    <span class="badge bg-warning text-dark rounded-pill me-2">4</span>
+                    <div><strong>Pipeline Update</strong><br><small class="text-muted">Progress customer stages</small></div>
+                </div>
+            </div>
+        </div>
+        <div class="card p-4">
+            <div class="alert alert-success small mb-0">
+                <i class="bi bi-shield-check me-1"></i>
+                <strong>Safe Mode:</strong> All emails are saved as drafts. Nothing is sent without your approval.
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let polling = null;
+function startWorkflow() {
+    document.getElementById('run-btn').disabled = true;
+    document.getElementById('run-btn').innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Running...';
+    document.getElementById('workflow-log').innerHTML = 'Starting workflow...\n';
+    document.getElementById('status-badge').innerHTML = '<span class="badge bg-warning fs-6"><i class="bi bi-hourglass-split me-1"></i>Running</span>';
+
+    fetch('/workflow/run', {method: 'POST'})
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                document.getElementById('workflow-log').innerHTML += '\nError: ' + data.error;
+                resetBtn();
+            } else {
+                polling = setInterval(pollStatus, 2000);
+            }
+        })
+        .catch(err => {
+            document.getElementById('workflow-log').innerHTML += '\nError: ' + err;
+            resetBtn();
+        });
+}
+
+function pollStatus() {
+    fetch('/workflow/status')
+        .then(r => r.json())
+        .then(data => {
+            let logDiv = document.getElementById('workflow-log');
+            logDiv.innerHTML = data.log.join('\n');
+            logDiv.scrollTop = logDiv.scrollHeight;
+
+            if (!data.running) {
+                clearInterval(polling);
+                if (data.error) {
+                    logDiv.innerHTML += '\n\n ERROR: ' + data.error;
+                    document.getElementById('status-badge').innerHTML = '<span class="badge bg-danger fs-6"><i class="bi bi-x-circle me-1"></i>Failed</span>';
+                } else {
+                    document.getElementById('status-badge').innerHTML = '<span class="badge bg-success fs-6"><i class="bi bi-check-circle me-1"></i>Completed</span>';
+                }
+                resetBtn();
+            }
+        });
+}
+
+function resetBtn() {
+    document.getElementById('run-btn').disabled = false;
+    document.getElementById('run-btn').innerHTML = '<i class="bi bi-play-fill me-1"></i>Run Full Workflow';
+}
+</script>
+{% endblock %}

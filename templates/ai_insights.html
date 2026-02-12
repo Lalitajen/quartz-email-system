@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+{% block title %}AI Insights{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center">
+    <h2><i class="bi bi-robot me-2"></i>AI Insights</h2>
+    <div>
+        <form method="POST" action="/customers/analyze-all" class="d-inline" data-loading>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-info"
+                    onclick="return confirm('Run AI analysis on up to 10 customers? This may take a minute.')">
+                <i class="bi bi-robot me-1"></i>AI Analyze All Customers
+            </button>
+        </form>
+    </div>
+</div>
+
+{% if error %}
+<div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+
+<!-- KPI Summary -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card stat-card text-center p-3">
+            <div class="stat-icon text-info"><i class="bi bi-robot"></i></div>
+            <div class="stat-value text-info">{{ total_analyzed }}/{{ total_customers }}</div>
+            <div class="stat-label text-muted">AI Analyzed</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card text-center p-3">
+            <div class="stat-icon text-danger"><i class="bi bi-fire"></i></div>
+            <div class="stat-value text-danger">{{ hot_leads|length }}</div>
+            <div class="stat-label text-muted">Hot Leads</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card text-center p-3">
+            <div class="stat-icon text-warning"><i class="bi bi-arrow-up-circle"></i></div>
+            <div class="stat-value text-warning">{{ upsell_ready|length }}</div>
+            <div class="stat-label text-muted">Upsell Ready</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card text-center p-3">
+            <div class="stat-icon text-secondary"><i class="bi bi-clock-history"></i></div>
+            <div class="stat-value text-secondary">{{ stale_customers|length }}</div>
+            <div class="stat-label text-muted">Stale (14d+)</div>
+        </div>
+    </div>
+</div>
+
+<!-- Prioritized Action List -->
+{% if action_items %}
+<div class="card p-4 mb-4">
+    <h5 class="mb-3"><i class="bi bi-list-check me-2"></i>Prioritized Actions</h5>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr><th>Priority</th><th>Customer</th><th>Recommended Action</th><th>Reason</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+            {% for item in action_items %}
+                <tr>
+                    <td>
+                        <span class="badge bg-{{ item.color }}">
+                            <i class="bi bi-{{ item.icon }} me-1"></i>{{ item.priority|upper }}
+                        </span>
+                    </td>
+                    <td>
+                        <a href="/customers/{{ item.customer.get('id', '') }}">
+                            {{ item.customer.get('company_name', '-')|e }}
+                        </a>
+                        <br><small class="text-muted">{{ item.customer.get('contact_email', '')|e }}</small>
+                    </td>
+                    <td><small>{{ item.action|e }}</small></td>
+                    <td><small class="text-muted">{{ item.reason|e }}</small></td>
+                    <td>
+                        <a href="/compose?id={{ item.customer.get('id', '') }}" class="btn btn-outline-success btn-sm">
+                            <i class="bi bi-pencil me-1"></i>Compose
+                        </a>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="card p-4 mb-4 text-center text-muted">
+    <i class="bi bi-robot" style="font-size:2rem;"></i>
+    <p class="mt-2">No action items yet. Run "AI Analyze All Customers" to generate insights.</p>
+</div>
+{% endif %}
+
+<!-- Three-Column Details -->
+<div class="row g-4 mb-4">
+    <!-- Hot Leads -->
+    <div class="col-md-4">
+        <div class="card p-4 h-100">
+            <h5 class="mb-3"><i class="bi bi-fire text-danger me-2"></i>Hot Leads</h5>
+            {% if hot_leads %}
+            {% for c in hot_leads %}
+                <div class="d-flex justify-content-between align-items-start p-2 mb-2 bg-light rounded">
+                    <div>
+                        <a href="/customers/{{ c.get('id', '') }}" class="fw-bold small text-decoration-none">
+                            {{ c.get('company_name', '-')|e }}
+                        </a>
+                        <br><small class="text-muted">
+                            {{ engagement_badge(c.get('engagement_level', '')) }}
+                            Intent: {{ c.get('buying_intent', 'N/A')|e }}
+                        </small>
+                    </div>
+                    <span class="badge bg-danger">{{ c.get('urgency_score', '?') }}/10</span>
+                </div>
+            {% endfor %}
+            {% else %}
+            <p class="text-muted small">No hot leads found. Run AI analysis first.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Upsell Opportunities -->
+    <div class="col-md-4">
+        <div class="card p-4 h-100">
+            <h5 class="mb-3"><i class="bi bi-arrow-up-circle text-warning me-2"></i>Upsell Opportunities</h5>
+            {% if upsell_ready %}
+            {% for u in upsell_ready %}
+                <div class="p-2 mb-2 bg-light rounded">
+                    <a href="/customers/{{ u.customer.get('id', '') }}" class="fw-bold small text-decoration-none">
+                        {{ u.customer.get('company_name', '-')|e }}
+                    </a>
+                    <br>
+                    <small>
+                        <span class="badge bg-secondary">Stage {{ u.current_stage }}</span>
+                        <i class="bi bi-arrow-right mx-1"></i>
+                        <span class="badge bg-success">Stage {{ u.next_stage }} - {{ u.next_stage_name|e }}</span>
+                    </small>
+                    {% if u.next_attachments %}
+                    <br><small class="text-muted">
+                        <i class="bi bi-paperclip me-1"></i>{{ u.next_attachments|join(', ') }}
+                    </small>
+                    {% endif %}
+                </div>
+            {% endfor %}
+            {% else %}
+            <p class="text-muted small">No upsell opportunities found. Run AI analysis first.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Stale / Re-engage -->
+    <div class="col-md-4">
+        <div class="card p-4 h-100">
+            <h5 class="mb-3"><i class="bi bi-clock-history text-secondary me-2"></i>Re-engage</h5>
+            {% if stale_customers %}
+            {% for s in stale_customers %}
+                <div class="d-flex justify-content-between align-items-start p-2 mb-2 bg-light rounded">
+                    <div>
+                        <a href="/customers/{{ s.customer.get('id', '') }}" class="fw-bold small text-decoration-none">
+                            {{ s.customer.get('company_name', '-')|e }}
+                        </a>
+                        <br><small class="text-muted">Stage {{ s.customer.get('pipeline_stage', '1') }}</small>
+                    </div>
+                    <span class="badge bg-secondary">{{ s.days_since_contact }}d ago</span>
+                </div>
+            {% endfor %}
+            {% else %}
+            <p class="text-muted small">No stale customers (all contacted within 14 days).</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Discover Prospects Section (Feature 3) -->
+<div class="card p-4 mb-4">
+    <h5><i class="bi bi-binoculars me-2"></i>Discover New Prospects</h5>
+    <p class="text-muted small">Enter an industry keyword and AI will suggest potential B2B customer types for high-purity quartz.</p>
+    <form method="POST" action="/ai-insights/discover" class="row g-3" data-loading>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="col-md-8">
+            <input type="text" class="form-control" name="keyword"
+                   placeholder="e.g., semiconductor, solar panel, glass manufacturing, ceramics, fiber optics"
+                   value="{{ discover_keyword|default('') }}" required>
+        </div>
+        <div class="col-md-4">
+            <button type="submit" class="btn btn-info w-100">
+                <i class="bi bi-search me-1"></i>Discover Prospects
+            </button>
+        </div>
+    </form>
+
+    {% if discovered_prospects %}
+    <hr>
+    <h6>Found {{ discovered_prospects|length }} prospect types for "{{ discover_keyword|e }}"</h6>
+    <form method="POST" action="/ai-insights/import-prospects">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th><input type="checkbox" id="selectAllProspects" onclick="document.querySelectorAll('.prospect-cb').forEach(cb => cb.checked = this.checked)"></th>
+                        <th>Company Type</th>
+                        <th>Example Name</th>
+                        <th>Department</th>
+                        <th>Why They Need Quartz</th>
+                        <th>Size</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for p in discovered_prospects %}
+                    <tr>
+                        <td><input type="checkbox" name="prospect_idx" value="{{ loop.index0 }}" class="prospect-cb" checked></td>
+                        <td><small>{{ p.get('company_type', '')|e }}</small></td>
+                        <td><strong>{{ p.get('example_name', '')|e }}</strong></td>
+                        <td><small>{{ p.get('contact_department', '')|e }}</small></td>
+                        <td><small class="text-muted">{{ p.get('reason', '')|e }}</small></td>
+                        <td><span class="badge bg-light text-dark">{{ p.get('estimated_size', '')|e }}</span></td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <button type="submit" class="btn btn-success">
+            <i class="bi bi-plus-lg me-1"></i>Import Selected to Customers
+        </button>
+        <a href="/ai-insights" class="btn btn-outline-secondary ms-2">Clear Results</a>
+    </form>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Research{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center">
+    <h2><i class="bi bi-search me-2"></i>AI Research</h2>
+    <form method="POST" action="/research/run-all">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-play-fill me-1"></i>Research All Pending</button>
+    </form>
+</div>
+
+<div class="row">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="table-responsive" style="max-height:600px; overflow-y:auto;">
+                <table class="table table-hover mb-0">
+                    <thead><tr><th>Company</th><th>Status</th><th></th></tr></thead>
+                    <tbody>
+                    {% for c in customers %}
+                        {% set research = c.get('research_status', 'pending') %}
+                        {% set badge = 'success' if research == 'completed' else 'warning' %}
+                        {% set active = 'table-active' if c.get('id')|string == selected_id else '' %}
+                        <tr class="{{ active }}">
+                            <td><a href="/research?id={{ c.get('id', '') }}">{{ c.get('company_name', '-')|e }}</a></td>
+                            <td><span class="badge bg-{{ badge }}">{{ research }}</span></td>
+                            <td>
+                                <form method="POST" action="/research/run" style="display:inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <input type="hidden" name="customer_id" value="{{ c.get('id', '') }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-primary"><i class="bi bi-search"></i></button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-8">
+        {% if selected %}
+        <div class="card p-4">
+            <div class="d-flex justify-content-between align-items-start">
+                <h5><i class="bi bi-building me-2"></i>{{ selected.get('company_name', '-')|e }}</h5>
+                {{ engagement_badge(selected.get('engagement_level', '')) }}
+            </div>
+            <hr>
+            <div class="row">
+                <div class="col-md-6">
+                    <p class="mb-1"><strong><i class="bi bi-globe me-1"></i>Website:</strong></p>
+                    <p>{{ selected.get('company_website', '-')|e }}</p>
+                </div>
+                <div class="col-md-6">
+                    <p class="mb-1"><strong><i class="bi bi-person me-1"></i>Contact:</strong></p>
+                    <p>{{ selected.get('contact_name', '-')|e }} ({{ selected.get('contact_email', '-')|e }})</p>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-6">
+                    <p class="mb-1"><strong>Pipeline:</strong> {{ stage_badge(selected.get('pipeline_stage', '-')) }}</p>
+                </div>
+                <div class="col-md-6">
+                    {% set rs = selected.get('research_status', 'pending') %}
+                    <p class="mb-1"><strong>Status:</strong> <span class="badge bg-{{ 'success' if rs == 'completed' else 'warning' }}">{{ rs }}</span></p>
+                </div>
+            </div>
+            <hr>
+            <h6><i class="bi bi-file-text me-1"></i>Research Summary</h6>
+            <div class="p-3 bg-light rounded mb-3">{{ selected.get('research_summary') or '<em class="text-muted">No research data yet. Click Research to start.</em>'|safe }}</div>
+            <h6><i class="bi bi-exclamation-triangle me-1"></i>Pain Points</h6>
+            <div class="p-3 bg-light rounded">{{ selected.get('pain_points') or '<em class="text-muted">Not identified yet.</em>'|safe }}</div>
+        </div>
+        {% else %}
+        <div class="card p-5 text-center text-muted">
+            <i class="bi bi-arrow-left" style="font-size:2rem;"></i>
+            <p class="mt-2">Select a customer to view research details</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% block title %}Customers{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center">
+    <h2><i class="bi bi-people me-2"></i>Customers</h2>
+    <div>
+        <form method="POST" action="/customers/analyze-all" class="d-inline" data-loading>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-outline-info me-2"
+                    onclick="return confirm('Run AI analysis on up to 10 customers? This may take a minute.')">
+                <i class="bi bi-robot me-1"></i>AI Analyze All
+            </button>
+        </form>
+        <a href="/customers/export-csv" class="btn btn-outline-secondary me-2">
+            <i class="bi bi-download me-1"></i>Export CSV
+        </a>
+        <button class="btn btn-success me-2" data-bs-toggle="modal" data-bs-target="#csvModal">
+            <i class="bi bi-file-earmark-spreadsheet me-1"></i>Import CSV
+        </button>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addModal">
+            <i class="bi bi-plus-lg me-1"></i>Add Customer
+        </button>
+    </div>
+</div>
+
+<!-- Engagement Filters -->
+<div class="mb-3">
+    <a href="/customers" class="btn btn-sm {{ 'btn-dark' if not filter_engagement else 'btn-outline-dark' }} me-1">All ({{ total_count }})</a>
+    {% for lvl in ['HOT', 'WARM', 'INTERESTED', 'COLD', 'UNRESPONSIVE'] %}
+        {% set count = eng_counts.get(lvl, 0) %}
+        {% if count > 0 %}
+            {% set info = engagement_colors.get(lvl, {'bg': 'secondary'}) %}
+            {% set bg = info.bg.split()[0] %}
+            {% if filter_engagement and filter_engagement.upper() == lvl %}
+                <a href="/customers?engagement={{ lvl }}" class="btn btn-sm btn-{{ bg }} me-1">{{ lvl }} ({{ count }})</a>
+            {% else %}
+                <a href="/customers?engagement={{ lvl }}" class="btn btn-sm btn-outline-{{ bg }} me-1">{{ lvl }} ({{ count }})</a>
+            {% endif %}
+        {% endif %}
+    {% endfor %}
+</div>
+
+<!-- Search -->
+<div class="mb-3">
+    <input type="text" id="customerSearch" class="form-control table-search" placeholder="Search customers...">
+</div>
+
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0" id="customerTable">
+            <thead>
+                <tr>
+                    <th>ID</th><th>Company</th><th>Contact</th><th>Email</th>
+                    <th>Pipeline</th><th>Engagement</th><th>Research</th><th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for c in customers %}
+                {% set research = c.get('research_status', 'pending') %}
+                {% set research_badge = 'success' if research == 'completed' else 'warning' %}
+                {% set eng_level = c.get('engagement_level', '')|string|upper %}
+                <tr>
+                    <td><small>{{ c.get('id', '-') }}</small></td>
+                    <td><a href="/customers/{{ c.get('id', '') }}" class="text-decoration-none"><strong>{{ c.get('company_name', '-')|e }}</strong></a></td>
+                    <td>{{ c.get('contact_name', '-')|e }}</td>
+                    <td><small>{{ c.get('contact_email', '-')|e }}</small></td>
+                    <td>{{ stage_badge(c.get('pipeline_stage', '-')) }}</td>
+                    <td>{{ engagement_badge(eng_level) }}</td>
+                    <td><span class="badge bg-{{ research_badge }}">{{ research }}</span></td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <a href="/research?id={{ c.get('id', '') }}" class="btn btn-outline-primary" title="Research"><i class="bi bi-search"></i></a>
+                            <a href="/compose?id={{ c.get('id', '') }}" class="btn btn-outline-success" title="Compose"><i class="bi bi-pencil"></i></a>
+                        </div>
+                    </td>
+                </tr>
+            {% else %}
+                <tr><td colspan="8" class="text-center text-muted py-4">No customers found</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if total_pages > 1 %}
+<nav class="mt-3">
+    <ul class="pagination justify-content-center">
+        <li class="page-item {{ 'disabled' if page <= 1 }}">
+            <a class="page-link" href="?page={{ page - 1 }}&engagement={{ filter_engagement }}&stage={{ filter_stage }}">Previous</a>
+        </li>
+        {% for p in range(1, total_pages + 1) %}
+        <li class="page-item {{ 'active' if p == page }}">
+            <a class="page-link" href="?page={{ p }}&engagement={{ filter_engagement }}&stage={{ filter_stage }}">{{ p }}</a>
+        </li>
+        {% endfor %}
+        <li class="page-item {{ 'disabled' if page >= total_pages }}">
+            <a class="page-link" href="?page={{ page + 1 }}&engagement={{ filter_engagement }}&stage={{ filter_stage }}">Next</a>
+        </li>
+    </ul>
+</nav>
+{% endif %}
+
+<p class="text-muted mt-2"><small>Showing {{ customers|length }} of {{ total_count }} customers</small></p>
+
+<!-- CSV Import Modal -->
+<div class="modal fade" id="csvModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="POST" action="/customers/import-csv" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-file-earmark-spreadsheet me-2"></i>Import Customers from CSV</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="csv-dropzone mb-3" onclick="document.getElementById('csvFile').click()">
+                        <i class="bi bi-cloud-upload" style="font-size:2rem;color:#6c757d;"></i>
+                        <p class="mb-1 mt-2">Click to select a CSV file</p>
+                        <small class="text-muted">Supported: .csv files (max 2 MB)</small>
+                        <input type="file" id="csvFile" name="csv_file" accept=".csv" class="d-none" onchange="document.getElementById('fileName').textContent = this.files[0].name">
+                        <p id="fileName" class="text-primary mt-2 mb-0"></p>
+                    </div>
+                    <div class="alert alert-info small">
+                        <strong>Required columns:</strong> company_name, contact_name, contact_email<br>
+                        <strong>Optional columns:</strong> company_website, company_email, contact_department, tags, pipeline_stage<br>
+                        <a href="/customers/csv-template" class="alert-link">Download CSV template</a>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success"><i class="bi bi-upload me-1"></i>Import</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Add Customer Modal -->
+<div class="modal fade" id="addModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="/customers/add">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add New Customer</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Company Name *</label>
+                            <input type="text" class="form-control" name="company_name" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Contact Name *</label>
+                            <input type="text" class="form-control" name="contact_name" required>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Contact Email *</label>
+                            <input type="email" class="form-control" name="contact_email" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Company Website</label>
+                            <input type="url" class="form-control" name="company_website" placeholder="https://...">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Company Email</label>
+                            <input type="email" class="form-control" name="company_email">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Department</label>
+                            <input type="text" class="form-control" name="department" placeholder="e.g. Purchasing">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Tags</label>
+                        <input type="text" class="form-control" name="tags" placeholder="e.g. semiconductor, hot, priority">
+                    </div>
+                    <div class="form-check mb-3">
+                        <input type="checkbox" class="form-check-input" name="auto_research" id="autoResearch" checked>
+                        <label class="form-check-label" for="autoResearch">
+                            <i class="bi bi-search me-1"></i>Auto-research company (requires website)
+                        </label>
+                        <small class="text-muted d-block">Uses AI to research the company and find pain points for better email personalization</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Add Customer</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>initTableSearch('customerSearch', 'customerTable'); initTableSort('customerTable');</script>
+{% endblock %}

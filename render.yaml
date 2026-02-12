@@ -1,0 +1,43 @@
+services:
+  - type: web
+    name: quartz-email-system
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GOOGLE_SHEETS_ID
+        sync: false
+      - key: APP_USERNAME
+        sync: false
+      - key: APP_PASSWORD
+        sync: false
+      - key: SENDER_NAME
+        sync: false
+      - key: SENDER_EMAIL
+        sync: false
+      - key: SENDER_TITLE
+        sync: false
+      - key: COMPANY_NAME
+        sync: false
+      - key: COMPANY_PHONE
+        sync: false
+      - key: COMPANY_WEBSITE
+        sync: false
+      - key: COMPANY_ADDRESS
+        sync: false
+      - key: SERVICE_ACCOUNT_B64
+        sync: false
+      - key: GMAIL_TOKEN_B64
+        sync: false
+      - key: GMAIL_CREDENTIALS_B64
+        sync: false
+      - key: MAX_EMAILS_PER_DAY
+        value: "50"
+      - key: FOLLOWUP_DAYS
+        value: "3"

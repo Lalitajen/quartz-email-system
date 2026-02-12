@@ -1,0 +1,589 @@
+{% extends "base.html" %}
+{% block title %}Auto-Reply{% endblock %}
+
+{% block content %}
+<!-- Header with Controls -->
+<div class="page-header d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-robot me-2"></i>Auto-Reply Center</h2>
+    <div class="d-flex gap-2 align-items-center">
+        <a href="/auto-reply/check-now" class="btn btn-primary btn-sm"
+           onclick="this.innerHTML='<span class=\'spinner-border spinner-border-sm me-1\'></span>Checking...'; this.style.pointerEvents='none';">
+            <i class="bi bi-search me-1"></i>Check Replies Now
+        </a>
+        <small class="text-muted me-2" id="liveIndicator" style="display:none;">
+            <i class="bi bi-broadcast text-success me-1 live-pulse"></i>Updated <span id="lastUpdated">-</span>
+        </small>
+        {% if available %}
+            <span id="daemonControls">
+            {% if daemon_status.get('running') %}
+                <form method="POST" action="/auto-reply/stop" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-outline-danger btn-sm"
+                        onclick="return confirm('Stop the auto-reply daemon?')">
+                        <i class="bi bi-stop-circle me-1"></i>Stop
+                    </button>
+                </form>
+                <span class="badge bg-success"><i class="bi bi-circle-fill me-1"></i>Auto ON</span>
+            {% else %}
+                <form method="POST" action="/auto-reply/start" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-success btn-sm"
+                        onclick="return confirm('Start auto-reply daemon? It will check Gmail automatically.')">
+                        <i class="bi bi-play-circle me-1"></i>Start Auto
+                    </button>
+                </form>
+                <span class="badge bg-secondary"><i class="bi bi-circle me-1"></i>Auto OFF</span>
+            {% endif %}
+            </span>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Quick Stats Bar -->
+<div class="row g-2 mb-4" id="statsBar">
+    <div class="col">
+        <div class="card border-0 bg-primary bg-opacity-10 text-center py-2">
+            <strong class="fs-4" id="statTotal">{{ email_summary.get('total', 0) }}</strong>
+            <small class="text-muted">Total Emails</small>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card border-0 bg-success bg-opacity-10 text-center py-2">
+            <strong class="fs-4 text-success" id="statReplies">{{ reply_stats.get('total_replies', 0) }}</strong>
+            <small class="text-muted">Replies</small>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card border-0 bg-danger bg-opacity-10 text-center py-2">
+            <strong class="fs-4 text-danger" id="statHotLeads">{{ reply_stats.get('hot_leads', 0) }}</strong>
+            <small class="text-muted">Hot Leads</small>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card border-0 bg-warning bg-opacity-10 text-center py-2">
+            <strong class="fs-4 text-warning" id="statNeedsAction">{{ reply_stats.get('needs_action', 0) }}</strong>
+            <small class="text-muted">Needs Action</small>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card border-0 bg-info bg-opacity-10 text-center py-2">
+            <strong class="fs-4 text-info" id="statStale">{{ email_summary.get('stale', 0) }}</strong>
+            <small class="text-muted">Overdue Follow-ups</small>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card border-0 bg-dark bg-opacity-10 text-center py-2">
+            <strong class="fs-4" id="statDeclined">{{ reply_stats.get('declined', 0) }}</strong>
+            <small class="text-muted">Declined</small>
+        </div>
+    </div>
+</div>
+
+<!-- Tabs -->
+<ul class="nav nav-pills mb-3" id="autoReplyTabs">
+    <li class="nav-item">
+        <a class="nav-link active" data-bs-toggle="pill" href="#inbox">
+            <i class="bi bi-inbox me-1"></i>Reply Inbox
+            <span class="badge bg-danger ms-1" id="inboxBadge" {% if reply_stats.get('needs_action', 0) == 0 %}style="display:none;"{% endif %}>{{ reply_stats.get('needs_action', 0) }}</span>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" data-bs-toggle="pill" href="#activity">
+            <i class="bi bi-clock-history me-1"></i>Activity Log
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" data-bs-toggle="pill" href="#pipeline">
+            <i class="bi bi-funnel me-1"></i>Pipeline Rules
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" data-bs-toggle="pill" href="#daemon">
+            <i class="bi bi-terminal me-1"></i>Daemon Log
+        </a>
+    </li>
+</ul>
+
+<div class="tab-content">
+    <!-- TAB 1: Reply Inbox -->
+    <div class="tab-pane fade show active" id="inbox">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-inbox-fill me-2"></i>Customer Replies Needing Action</h5>
+                <div>
+                    <a href="/tracking?tab=replied" class="btn btn-outline-secondary btn-sm"><i class="bi bi-eye me-1"></i>View All in Tracking</a>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Company</th>
+                            <th>Reply Summary</th>
+                            <th>Request Type</th>
+                            <th>Detected Stage</th>
+                            <th>Reply Date</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="inboxBody">
+                    {% for r in reply_inbox[:20] %}
+                        {% set type_colors = {
+                            'Quotation Request': 'danger',
+                            'Sample Request': 'warning',
+                            'Technical Info Request': 'primary',
+                            'Info Request': 'info',
+                            'Contract Request': 'danger',
+                            'Shipping Inquiry': 'success',
+                            'Repeat Order': 'success',
+                            'Declined': 'dark',
+                            'General Reply': 'secondary'
+                        } %}
+                        <tr>
+                            <td>
+                                <a href="/customers/{{ r.customer_id }}" class="text-decoration-none">
+                                    <strong>{{ r.company_name|e }}</strong>
+                                </a>
+                                <br><small class="text-muted">{{ r.contact_email|e }}</small>
+                                {% if r.engagement %}
+                                <br>
+                                {% set eng_colors = {'HOT': 'danger', 'WARM': 'warning', 'INTERESTED': 'info', 'COLD': 'secondary'} %}
+                                <span class="badge bg-{{ eng_colors.get(r.engagement, 'secondary') }}" style="font-size:0.6rem;">{{ r.engagement }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <small>{{ r.reply_summary|e|truncate(80) }}</small>
+                            </td>
+                            <td>
+                                <span class="badge bg-{{ type_colors.get(r.request_type, 'secondary') }}">{{ r.request_type or 'Unknown' }}</span>
+                            </td>
+                            <td>
+                                {% if r.detected_stage %}
+                                <span class="badge bg-primary">{{ r.detected_stage }} - {{ r.detected_stage_name }}</span>
+                                {% if r.detected_attachments %}
+                                <br>
+                                {% for att in r.detected_attachments %}
+                                <small class="text-muted"><i class="bi bi-paperclip"></i>{{ att }}</small>
+                                {% endfor %}
+                                {% endif %}
+                                {% else %}
+                                <span class="badge bg-secondary">-</span>
+                                {% endif %}
+                            </td>
+                            <td><small>{{ r.reply_date }}</small></td>
+                            <td>
+                                <div class="d-flex gap-1">
+                                    {% if r.detected_stage and r.detected_stage != '10' %}
+                                    <form method="POST" action="/tracking/follow_up" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <input type="hidden" name="email_id" value="{{ r.email_id }}">
+                                        <input type="hidden" name="customer_id" value="{{ r.customer_id }}">
+                                        <input type="hidden" name="stage" value="{{ r.detected_stage }}">
+                                        <button type="submit" class="btn btn-success btn-sm"
+                                            onclick="return confirm('Send Stage {{ r.detected_stage }} reply to {{ r.company_name|e }}?')">
+                                            <i class="bi bi-reply me-1"></i>Reply
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                    <a href="/compose?id={{ r.customer_id }}" class="btn btn-outline-primary btn-sm" title="Compose custom email">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="6" class="text-center text-muted py-5">
+                            <i class="bi bi-check-circle" style="font-size:2rem;"></i>
+                            <p class="mt-2 mb-1">All caught up! No replies need action.</p>
+                            <a href="/auto-reply/check-now" class="btn btn-outline-primary btn-sm mt-2">
+                                <i class="bi bi-search me-1"></i>Check for new replies
+                            </a>
+                        </td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if reply_inbox|length > 20 %}
+            <div class="card-footer text-center">
+                <small class="text-muted">Showing 20 of {{ reply_inbox|length }} replies. <a href="/tracking?tab=replied">View all</a></small>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- TAB 2: Activity Log -->
+    <div class="tab-pane fade" id="activity">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Recent Activity</h5>
+                <div class="d-flex gap-2 align-items-center">
+                    {% if statistics.get('last_check') %}
+                    <small class="text-muted">Last: {{ statistics.get('last_check') }}</small>
+                    {% endif %}
+                    <form method="POST" action="/auto-reply/clear-activity" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-outline-secondary btn-sm"
+                            onclick="return confirm('Clear activity history?')">
+                            <i class="bi bi-trash me-1"></i>Clear
+                        </button>
+                    </form>
+                </div>
+            </div>
+            <!-- Activity Stats -->
+            <div class="card-body border-bottom py-2" id="activityStats">
+                <div class="row text-center">
+                    <div class="col"><strong id="actChecks">{{ statistics.get('total_checks', 0) }}</strong><br><small class="text-muted">Checks</small></div>
+                    <div class="col"><strong id="actFound">{{ statistics.get('total_processed', 0) }}</strong><br><small class="text-muted">Found</small></div>
+                    <div class="col"><strong class="text-success" id="actUpdated">{{ statistics.get('total_sent', 0) }}</strong><br><small class="text-muted">Updated</small></div>
+                    <div class="col"><strong class="text-warning" id="actStale">{{ statistics.get('total_stale', 0) }}</strong><br><small class="text-muted">Stale</small></div>
+                    <div class="col"><strong class="text-danger" id="actErrors">{{ statistics.get('total_failed', 0) }}</strong><br><small class="text-muted">Errors</small></div>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 table-sm">
+                    <thead>
+                        <tr><th>Time</th><th>Source</th><th>Details</th><th>Stage</th><th>Result</th></tr>
+                    </thead>
+                    <tbody id="activityBody">
+                    {% for activity in recent_activity %}
+                        {% set result_colors = {'sent': 'success', 'check': 'info', 'stale': 'warning', 'skipped': 'secondary', 'failed': 'danger'} %}
+                        <tr>
+                            <td><small>{{ activity.get('time', '-') }}</small></td>
+                            <td>
+                                {% if activity.get('company') %}
+                                    <strong>{{ activity.get('company', '')|e }}</strong><br>
+                                {% endif %}
+                                <small class="text-muted">{{ activity.get('from', '-')|e }}</small>
+                            </td>
+                            <td><small>{{ activity.get('type', '-')|e }}</small></td>
+                            <td><span class="badge bg-secondary">{{ activity.get('stage', '-') }}</span></td>
+                            <td><span class="badge bg-{{ result_colors.get(activity.get('result', ''), 'secondary') }}">{{ activity.get('result', '-') }}</span></td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="5" class="text-center text-muted py-4">
+                            No activity recorded yet. Click "Check Replies Now" to start.
+                        </td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 3: Pipeline Rules -->
+    <div class="tab-pane fade" id="pipeline">
+        <div class="row g-4">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-funnel me-2"></i>Pipeline Stage Rules</h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <table class="table table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Stage Name</th>
+                                    <th>Auto-Attachments</th>
+                                    <th>Trigger Keywords</th>
+                                    <th>Follow-up Delay</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            {% set stage_colors = ['info', 'success', 'warning', 'danger', 'primary', 'dark', 'secondary', 'info', 'success', 'primary'] %}
+                            {% for stage_num, stage in pipeline_stages.items()|sort %}
+                                <tr>
+                                    <td><span class="badge bg-{{ stage_colors[(stage_num - 1) % 10] }}">{{ stage_num }}</span></td>
+                                    <td><strong>{{ stage.name }}</strong></td>
+                                    <td>
+                                        {% for att in stage.get('attachments', []) %}
+                                        <span class="badge bg-light text-dark me-1" style="font-size:0.7rem;"><i class="bi bi-paperclip"></i> {{ att }}</span><br>
+                                        {% endfor %}
+                                        {% if not stage.get('attachments') %}<span class="text-muted">-</span>{% endif %}
+                                    </td>
+                                    <td>
+                                        {% for kw in stage.get('trigger_keywords', []) %}
+                                        <span class="badge bg-dark bg-opacity-10 text-dark me-1 mb-1" style="font-size:0.65rem;">{{ kw }}</span>
+                                        {% endfor %}
+                                    </td>
+                                    <td>
+                                        {% if stage.get('followup_days', 0) > 0 %}
+                                        <span class="badge bg-warning text-dark"><i class="bi bi-clock me-1"></i>{{ stage.followup_days }} days</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary"><i class="bi bi-x me-1"></i>Never</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <!-- How it works -->
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-question-circle me-2"></i>How It Works</h5>
+                    </div>
+                    <div class="card-body">
+                        <ol class="small mb-0">
+                            <li class="mb-2">Customer replies to your email</li>
+                            <li class="mb-2">System scans reply for <strong>trigger keywords</strong></li>
+                            <li class="mb-2">Detects which <strong>pipeline stage</strong> matches their request</li>
+                            <li class="mb-2">Shows in <strong>Reply Inbox</strong> with suggested action</li>
+                            <li class="mb-2">You click <strong>Reply</strong> to send AI-generated email with correct attachments</li>
+                            <li class="mb-2">If no reply within <strong>follow-up delay</strong>, email appears in Follow-up Queue</li>
+                        </ol>
+                    </div>
+                </div>
+                <!-- Daemon Info -->
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="bi bi-gear me-2"></i>Settings</h5>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-sm mb-0">
+                            <tr>
+                                <td class="text-muted">Daemon</td>
+                                <td>
+                                    {% if daemon_status.get('running') %}
+                                    <span class="text-success"><i class="bi bi-circle-fill me-1"></i>Running (PID: {{ daemon_status.get('pid', '?') }})</span>
+                                    {% else %}
+                                    <span class="text-danger"><i class="bi bi-circle-fill me-1"></i>Stopped</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            <tr><td class="text-muted">Gmail</td><td>{{ config.get('SENDER_EMAIL', '-') }}</td></tr>
+                            <tr><td class="text-muted">Auto Check</td><td>Every {{ config.get('EMAIL_CHECK_INTERVAL_HOURS', '24') }}h</td></tr>
+                            <tr><td class="text-muted">Default Delay</td><td>{{ config.get('FOLLOWUP_DAYS', '3') }} days</td></tr>
+                        </table>
+                        <a href="/settings" class="btn btn-outline-secondary btn-sm w-100 mt-2"><i class="bi bi-gear me-1"></i>Edit Settings</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 4: Daemon Log -->
+    <div class="tab-pane fade" id="daemon">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-terminal me-2"></i>Daemon Log</h5>
+                <div class="d-flex gap-2">
+                    <small class="text-muted">Last 40 lines</small>
+                    <form method="POST" action="/auto-reply/clear-log" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-outline-secondary btn-sm"
+                            onclick="return confirm('Clear the daemon log?')">
+                            <i class="bi bi-trash me-1"></i>Clear
+                        </button>
+                    </form>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <pre class="bg-dark text-light p-3 mb-0" id="logViewer" style="max-height:450px; overflow-y:auto; font-size:0.8rem; line-height:1.5;">{% if log_lines %}{% for line in log_lines %}{{ line|e }}
+{% endfor %}{% else %}No log file found. Start the daemon or click "Check Replies Now".{% endif %}</pre>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.live-pulse { animation: pulse 1.5s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+.stat-flash { animation: flashHighlight 0.6s ease-out; }
+@keyframes flashHighlight { 0% { background: rgba(25,135,84,0.3); } 100% { background: transparent; } }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Auto-scroll log to bottom on load
+var logViewer = document.getElementById('logViewer');
+if (logViewer) logViewer.scrollTop = logViewer.scrollHeight;
+
+// Real-time AJAX refresh (every 10 seconds)
+(function() {
+    var REFRESH_INTERVAL = 10000;
+    var indicator = document.getElementById('liveIndicator');
+    var lastUpdatedEl = document.getElementById('lastUpdated');
+
+    function escHtml(s) {
+        var d = document.createElement('div');
+        d.textContent = s || '';
+        return d.innerHTML;
+    }
+
+    function updateStat(id, val) {
+        var el = document.getElementById(id);
+        if (el && el.textContent.trim() !== String(val)) {
+            el.textContent = val;
+            el.classList.remove('stat-flash');
+            void el.offsetWidth; // reflow
+            el.classList.add('stat-flash');
+        }
+    }
+
+    var typeColors = {
+        'Quotation Request': 'danger', 'Sample Request': 'warning',
+        'Technical Info Request': 'primary', 'Info Request': 'info',
+        'Contract Request': 'danger', 'Shipping Inquiry': 'success',
+        'Repeat Order': 'success', 'Declined': 'dark', 'General Reply': 'secondary'
+    };
+    var engColors = {'HOT': 'danger', 'WARM': 'warning', 'INTERESTED': 'info', 'COLD': 'secondary'};
+    var resultColors = {'sent': 'success', 'check': 'info', 'stale': 'warning', 'skipped': 'secondary', 'failed': 'danger'};
+
+    function buildInboxRow(r) {
+        var tc = typeColors[r.request_type] || 'secondary';
+        var row = '<tr><td>';
+        row += '<a href="/customers/' + escHtml(r.customer_id) + '" class="text-decoration-none"><strong>' + escHtml(r.company_name) + '</strong></a>';
+        row += '<br><small class="text-muted">' + escHtml(r.contact_email) + '</small>';
+        if (r.engagement) {
+            var ec = engColors[r.engagement] || 'secondary';
+            row += '<br><span class="badge bg-' + ec + '" style="font-size:0.6rem;">' + escHtml(r.engagement) + '</span>';
+        }
+        row += '</td><td><small>' + escHtml(r.reply_summary) + '</small></td>';
+        row += '<td><span class="badge bg-' + tc + '">' + escHtml(r.request_type || 'Unknown') + '</span></td>';
+        row += '<td>';
+        if (r.detected_stage) {
+            row += '<span class="badge bg-primary">' + escHtml(r.detected_stage) + ' - ' + escHtml(r.detected_stage_name) + '</span>';
+            if (r.detected_attachments && r.detected_attachments.length) {
+                row += '<br>';
+                r.detected_attachments.forEach(function(att) {
+                    row += '<small class="text-muted"><i class="bi bi-paperclip"></i>' + escHtml(att) + '</small>';
+                });
+            }
+        } else {
+            row += '<span class="badge bg-secondary">-</span>';
+        }
+        row += '</td><td><small>' + escHtml(r.reply_date) + '</small></td>';
+        row += '<td><div class="d-flex gap-1">';
+        if (r.detected_stage && r.detected_stage !== '10') {
+            row += '<form method="POST" action="/tracking/follow_up" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">';
+            row += '<input type="hidden" name="email_id" value="' + escHtml(r.email_id) + '">';
+            row += '<input type="hidden" name="customer_id" value="' + escHtml(r.customer_id) + '">';
+            row += '<input type="hidden" name="stage" value="' + escHtml(r.detected_stage) + '">';
+            row += '<button type="submit" class="btn btn-success btn-sm" onclick="return confirm(\'Send Stage ' + escHtml(r.detected_stage) + ' reply to ' + escHtml(r.company_name) + '?\')"><i class="bi bi-reply me-1"></i>Reply</button>';
+            row += '</form>';
+        }
+        row += '<a href="/compose?id=' + escHtml(r.customer_id) + '" class="btn btn-outline-primary btn-sm" title="Compose custom email"><i class="bi bi-pencil"></i></a>';
+        row += '</div></td></tr>';
+        return row;
+    }
+
+    function buildActivityRow(a) {
+        var rc = resultColors[a.result] || 'secondary';
+        var row = '<tr>';
+        row += '<td><small>' + escHtml(a.time || '-') + '</small></td>';
+        row += '<td>';
+        if (a.company) row += '<strong>' + escHtml(a.company) + '</strong><br>';
+        row += '<small class="text-muted">' + escHtml(a.from || '-') + '</small></td>';
+        row += '<td><small>' + escHtml(a.type || '-') + '</small></td>';
+        row += '<td><span class="badge bg-secondary">' + escHtml(a.stage || '-') + '</span></td>';
+        row += '<td><span class="badge bg-' + rc + '">' + escHtml(a.result || '-') + '</span></td>';
+        row += '</tr>';
+        return row;
+    }
+
+    function refreshData() {
+        fetch('/auto-reply/status')
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (data.error) return;
+
+                // Update stats bar
+                updateStat('statTotal', data.email_summary.total);
+                updateStat('statReplies', data.reply_stats.total_replies);
+                updateStat('statHotLeads', data.reply_stats.hot_leads);
+                updateStat('statNeedsAction', data.reply_stats.needs_action);
+                updateStat('statStale', data.email_summary.stale);
+                updateStat('statDeclined', data.reply_stats.declined);
+
+                // Update inbox badge
+                var badge = document.getElementById('inboxBadge');
+                if (badge) {
+                    badge.textContent = data.reply_stats.needs_action;
+                    badge.style.display = data.reply_stats.needs_action > 0 ? '' : 'none';
+                }
+
+                // Update inbox table
+                var inboxBody = document.getElementById('inboxBody');
+                if (inboxBody) {
+                    if (data.reply_inbox.length > 0) {
+                        var html = '';
+                        data.reply_inbox.forEach(function(r) { html += buildInboxRow(r); });
+                        inboxBody.innerHTML = html;
+                    } else {
+                        inboxBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-5">' +
+                            '<i class="bi bi-check-circle" style="font-size:2rem;"></i>' +
+                            '<p class="mt-2 mb-1">All caught up! No replies need action.</p>' +
+                            '<a href="/auto-reply/check-now" class="btn btn-outline-primary btn-sm mt-2">' +
+                            '<i class="bi bi-search me-1"></i>Check for new replies</a></td></tr>';
+                    }
+                }
+
+                // Update activity stats
+                if (data.statistics) {
+                    updateStat('actChecks', data.statistics.total_checks || 0);
+                    updateStat('actFound', data.statistics.total_processed || 0);
+                    updateStat('actUpdated', data.statistics.total_sent || 0);
+                    updateStat('actStale', data.statistics.total_stale || 0);
+                    updateStat('actErrors', data.statistics.total_failed || 0);
+                }
+
+                // Update activity log
+                var actBody = document.getElementById('activityBody');
+                if (actBody && data.recent_activity) {
+                    if (data.recent_activity.length > 0) {
+                        var ahtml = '';
+                        data.recent_activity.forEach(function(a) { ahtml += buildActivityRow(a); });
+                        actBody.innerHTML = ahtml;
+                    } else {
+                        actBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">No activity recorded yet. Click "Check Replies Now" to start.</td></tr>';
+                    }
+                }
+
+                // Update daemon log
+                var lv = document.getElementById('logViewer');
+                if (lv && data.log_lines && data.log_lines.length > 0) {
+                    var wasAtBottom = (lv.scrollHeight - lv.scrollTop - lv.clientHeight) < 30;
+                    lv.textContent = data.log_lines.join('\n');
+                    if (wasAtBottom) lv.scrollTop = lv.scrollHeight;
+                }
+
+                // Update daemon status controls
+                var dc = document.getElementById('daemonControls');
+                if (dc && data.daemon_status) {
+                    var running = data.daemon_status.running;
+                    var pid = data.daemon_status.pid || '?';
+                    if (running) {
+                        dc.innerHTML = '<form method="POST" action="/auto-reply/stop" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">' +
+                            '<button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm(\'Stop the auto-reply daemon?\')"><i class="bi bi-stop-circle me-1"></i>Stop</button></form>' +
+                            ' <span class="badge bg-success"><i class="bi bi-circle-fill me-1"></i>Auto ON</span>';
+                    } else {
+                        dc.innerHTML = '<form method="POST" action="/auto-reply/start" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">' +
+                            '<button type="submit" class="btn btn-success btn-sm" onclick="return confirm(\'Start auto-reply daemon? It will check Gmail automatically.\')"><i class="bi bi-play-circle me-1"></i>Start Auto</button></form>' +
+                            ' <span class="badge bg-secondary"><i class="bi bi-circle me-1"></i>Auto OFF</span>';
+                    }
+                }
+
+                // Show live indicator
+                if (indicator) indicator.style.display = '';
+                if (lastUpdatedEl) lastUpdatedEl.textContent = data.timestamp || new Date().toLocaleTimeString();
+            })
+            .catch(function(err) {
+                console.log('Auto-refresh error:', err);
+            });
+    }
+
+    // Start polling
+    setInterval(refreshData, REFRESH_INTERVAL);
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,414 @@
+{% extends "base.html" %}
+{% block title %}Tracking{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center">
+    <h2><i class="bi bi-envelope-check me-2"></i>Email Tracking</h2>
+    <div class="d-flex gap-2">
+        <a href="/tracking/check_replies" class="btn btn-outline-primary btn-sm"><i class="bi bi-arrow-repeat me-1"></i>Check Replies</a>
+        <a href="/tracking/send_scheduled" class="btn btn-outline-success btn-sm"><i class="bi bi-calendar-check me-1"></i>Send Scheduled</a>
+        <a href="/tracking/auto_followup" class="btn btn-outline-warning btn-sm" onclick="return confirm('Send follow-up emails to all customers who haven\'t replied? This will generate and send AI emails.')"><i class="bi bi-clock-history me-1"></i>Auto Follow-up</a>
+        <a href="/tracking/export-csv" class="btn btn-outline-secondary btn-sm"><i class="bi bi-download me-1"></i>Export CSV</a>
+    </div>
+</div>
+
+<ul class="nav nav-pills mb-3">
+    <li class="nav-item"><a class="nav-link {{ 'active' if tab == 'all' }}" href="/tracking?tab=all">All <span class="badge bg-dark ms-1">{{ total_count }}</span></a></li>
+    <li class="nav-item"><a class="nav-link {{ 'active' if tab == 'pending' }}" href="/tracking?tab=pending">Pending Review <span class="badge bg-warning text-dark ms-1">{{ n_pending }}</span></a></li>
+    <li class="nav-item"><a class="nav-link {{ 'active' if tab == 'queued' }}" href="/tracking?tab=queued">Queued <span class="badge bg-primary ms-1">{{ n_queued }}</span></a></li>
+    <li class="nav-item"><a class="nav-link {{ 'active' if tab == 'sent' }}" href="/tracking?tab=sent">Sent <span class="badge bg-success ms-1">{{ n_sent }}</span></a></li>
+    <li class="nav-item"><a class="nav-link {{ 'active' if tab == 'replied' }}" href="/tracking?tab=replied">Replied <span class="badge bg-info ms-1">{{ n_replied }}</span></a></li>
+    <li class="nav-item"><a class="nav-link {{ 'active' if tab == 'followups' }}" href="/tracking/followup_queue">Follow-ups <span class="badge bg-warning text-dark ms-1">{{ n_followups|default(0) }}</span></a></li>
+    <li class="nav-item"><a class="nav-link {{ 'active' if tab == 'pipeline' }}" href="/tracking/pipeline_view"><i class="bi bi-funnel me-1"></i>By Stage</a></li>
+</ul>
+
+{% if tab == 'pipeline' %}
+<!-- Pipeline Stage View -->
+{% set stage_colors = ['info', 'success', 'primary', 'warning', 'danger', 'dark', 'secondary', 'info', 'success', 'primary'] %}
+{% set type_colors = {
+    'Quotation Request': 'danger', 'Sample Request': 'warning',
+    'Technical Info Request': 'primary', 'Info Request': 'info',
+    'Contract Request': 'danger', 'Shipping Inquiry': 'success',
+    'Repeat Order': 'success', 'Declined': 'dark', 'General Reply': 'secondary'
+} %}
+{% set eng_colors = {'HOT': 'danger', 'WARM': 'warning', 'INTERESTED': 'info', 'COLD': 'secondary', 'UNRESPONSIVE': 'dark'} %}
+
+<!-- Stage Jump Navigation -->
+<div class="card p-3 mb-3">
+    <div class="d-flex align-items-center flex-wrap gap-2">
+        <strong class="me-2"><i class="bi bi-funnel me-1"></i>Jump to:</strong>
+        {% for snum in stage_groups|sort %}
+            {% set sg = stage_groups[snum] %}
+            {% set sc = stage_colors[(snum - 1) % 10] %}
+            <a href="#stage{{ snum }}" class="btn btn-sm btn-{{ 'outline-' + sc if sg.total == 0 else sc }} position-relative">
+                {{ snum }}. {{ sg.info.name }}
+                {% if sg.needs_action > 0 %}
+                    <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">{{ sg.needs_action }}</span>
+                {% endif %}
+                <span class="badge bg-white text-dark ms-1">{{ sg.total }}</span>
+            </a>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Stage Overview Summary -->
+<div class="row g-2 mb-3">
+    {% for snum in stage_groups|sort %}
+        {% set sg = stage_groups[snum] %}
+        {% set sc = stage_colors[(snum - 1) % 10] %}
+        <div class="col">
+            <div class="card border-0 bg-{{ sc }} bg-opacity-10 text-center py-2" style="min-width:0;">
+                <strong class="fs-5">{{ sg.total }}</strong>
+                <small class="text-muted text-truncate d-block px-1">{{ snum }}. {{ sg.info.name }}</small>
+                {% if sg.needs_action > 0 %}
+                    <small class="text-danger fw-bold">{{ sg.needs_action }} action</small>
+                {% elif sg.replied > 0 %}
+                    <small class="text-success">{{ sg.replied }} replied</small>
+                {% else %}
+                    <small class="text-muted">-</small>
+                {% endif %}
+            </div>
+        </div>
+    {% endfor %}
+</div>
+
+<!-- Stage-by-Stage Accordion -->
+<div class="accordion" id="pipelineAccordion">
+{% for snum in stage_groups|sort %}
+    {% set sg = stage_groups[snum] %}
+    {% set sc = stage_colors[(snum - 1) % 10] %}
+    {% set is_open = (stage_filter|string == snum|string) or (not stage_filter and sg.needs_action > 0) %}
+    <div class="accordion-item" id="stage{{ snum }}">
+        <h2 class="accordion-header">
+            <button class="accordion-button {{ '' if is_open else 'collapsed' }} py-2" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#stageBody{{ snum }}">
+                <span class="badge bg-{{ sc }} me-2">{{ snum }}</span>
+                <strong class="me-2">{{ sg.info.name }}</strong>
+                <span class="badge bg-dark me-1">{{ sg.total }} total</span>
+                {% if sg.replied > 0 %}<span class="badge bg-success me-1">{{ sg.replied }} replied</span>{% endif %}
+                {% if sg.needs_action > 0 %}<span class="badge bg-danger me-1">{{ sg.needs_action }} action needed</span>{% endif %}
+                {% if sg.awaiting > 0 %}<span class="badge bg-secondary me-1">{{ sg.awaiting }} awaiting</span>{% endif %}
+                {% if sg.followed_up > 0 %}<span class="badge bg-info me-1">{{ sg.followed_up }} followed up</span>{% endif %}
+                {% if sg.info.get('attachments') %}
+                    <small class="text-muted ms-2"><i class="bi bi-paperclip"></i> {{ sg.info.attachments|join(', ') }}</small>
+                {% endif %}
+            </button>
+        </h2>
+        <div id="stageBody{{ snum }}" class="accordion-collapse collapse {{ 'show' if is_open }}"
+             data-bs-parent="#pipelineAccordion">
+            <div class="accordion-body p-0">
+                {% if sg.emails %}
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th>Company</th>
+                                <th>Subject</th>
+                                <th>Sent</th>
+                                <th>Status</th>
+                                <th>Reply</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for e in sg.emails %}
+                            <tr class="{{ 'table-danger bg-opacity-10' if (e.replied == 'yes' and e.status == 'replied') else ('table-warning bg-opacity-10' if e.is_overdue else '') }}">
+                                <td>
+                                    <a href="/customers/{{ e.customer_id }}" class="text-decoration-none">
+                                        <strong>{{ e.company_name|e }}</strong>
+                                    </a>
+                                    <br><small class="text-muted">{{ e.contact_email|e }}</small>
+                                    {% if e.engagement %}
+                                        <br><span class="badge bg-{{ eng_colors.get(e.engagement, 'secondary') }}" style="font-size:0.55rem;">{{ e.engagement }}</span>
+                                    {% endif %}
+                                </td>
+                                <td><small>{{ e.subject|e|truncate(40) }}</small></td>
+                                <td>
+                                    <small>{{ e.sent_date }}</small>
+                                    {% if e.days_since is not none and e.days_since != '' %}
+                                        <br><small class="text-muted">{{ e.days_since }}d ago</small>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% set status_colors = {'sent': 'success', 'queued': 'primary', 'draft': 'secondary', 'failed': 'danger', 'replied': 'info', 'followed_up': 'dark', 'skipped': 'secondary'} %}
+                                    <span class="badge bg-{{ status_colors.get(e.status, 'secondary') }}">{{ e.status }}</span>
+                                    {% if e.is_overdue %}
+                                        <br><span class="badge bg-warning text-dark" style="font-size:0.6rem;">overdue</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if e.replied == 'yes' %}
+                                        <span class="badge bg-{{ type_colors.get(e.request_type, 'secondary') }}">{{ e.request_type or 'Replied' }}</span>
+                                        {% if e.detected_stage %}
+                                            <br><small class="text-muted">Detect: Stage {{ e.detected_stage }}</small>
+                                        {% endif %}
+                                    {% else %}
+                                        <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="d-flex gap-1 flex-wrap align-items-center">
+                                        {% if e.replied == 'yes' and e.status == 'replied' and e.detected_stage and e.detected_stage != '10' %}
+                                            <form method="POST" action="/tracking/follow_up" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                <input type="hidden" name="email_id" value="{{ e.email_id }}">
+                                                <input type="hidden" name="customer_id" value="{{ e.customer_id }}">
+                                                <input type="hidden" name="stage" value="{{ e.detected_stage }}">
+                                                <button type="submit" class="btn btn-success btn-sm"
+                                                    onclick="return confirm('Send Stage {{ e.detected_stage }} ({{ e.detected_stage_name }}) reply to {{ e.company_name|e }}?')">
+                                                    <i class="bi bi-reply me-1"></i>Reply
+                                                </button>
+                                            </form>
+                                        {% endif %}
+                                        {% if e.is_overdue %}
+                                            <div class="btn-group" role="group">
+                                                {% for days in [3, 7] %}
+                                                <form method="POST" action="/tracking/snooze" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                    <input type="hidden" name="email_id" value="{{ e.email_id }}">
+                                                    <input type="hidden" name="snooze_days" value="{{ days }}">
+                                                    <input type="hidden" name="company_name" value="{{ e.company_name|e }}">
+                                                    <input type="hidden" name="redirect_to" value="pipeline_view">
+                                                    <button type="submit" class="btn btn-outline-info btn-sm" title="Snooze {{ days }} days">
+                                                        <i class="bi bi-alarm"></i>{{ days }}d
+                                                    </button>
+                                                </form>
+                                                {% endfor %}
+                                            </div>
+                                            <form method="POST" action="/tracking/skip" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                <input type="hidden" name="email_id" value="{{ e.email_id }}">
+                                                <input type="hidden" name="redirect_to" value="pipeline_view">
+                                                <button type="submit" class="btn btn-outline-danger btn-sm"
+                                                    onclick="return confirm('Skip follow-up for {{ e.company_name|e }}?')"
+                                                    title="Skip this follow-up">
+                                                    <i class="bi bi-x-lg"></i>
+                                                </button>
+                                            </form>
+                                        {% endif %}
+                                        <a href="/compose?id={{ e.customer_id }}" class="btn btn-outline-primary btn-sm" title="Compose custom email">
+                                            <i class="bi bi-pencil"></i>
+                                        </a>
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center text-muted py-3">
+                    <small>No emails at this stage</small>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+{% endfor %}
+</div>
+<p class="text-muted mt-2"><small>{{ total_count }} total emails across {{ pipeline_stages|length }} pipeline stages</small></p>
+
+{% elif tab == 'followups' %}
+<!-- Follow-up Queue -->
+<div class="card">
+    <div class="card-header bg-warning bg-opacity-10">
+        <div class="d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Follow-up Queue</h5>
+            <small class="text-muted">Emails due for follow-up based on per-stage delays</small>
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Company / Email</th>
+                    <th>Last Subject</th>
+                    <th>Sent</th>
+                    <th>Current Stage</th>
+                    <th>Next Stage</th>
+                    <th>Overdue</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for f in followup_queue %}
+                <tr class="{{ 'table-danger' if f.days_overdue >= 7 else ('table-warning' if f.days_overdue >= 3 else '') }}">
+                    <td>
+                        <a href="/customers/{{ f.customer_id }}" class="text-decoration-none"><strong>{{ f.company_name|e }}</strong></a>
+                        <br><small class="text-muted">{{ f.contact_email|e }}</small>
+                    </td>
+                    <td><small>{{ f.subject|e|truncate(35) }}</small></td>
+                    <td><small>{{ f.sent_date }}</small><br><small class="text-muted">Due: {{ f.due_date }}</small></td>
+                    <td><span class="badge bg-secondary">{{ f.current_stage }} - {{ f.current_stage_name }}</span></td>
+                    <td>
+                        <span class="badge bg-primary">{{ f.next_stage }} - {{ f.next_stage_name }}</span>
+                        {% if f.next_attachments %}
+                        <br><small class="text-muted"><i class="bi bi-paperclip"></i> {{ f.next_attachments|join(', ') }}</small>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if f.days_overdue >= 7 %}
+                            <span class="badge bg-danger">{{ f.days_overdue }}d overdue</span>
+                        {% elif f.days_overdue >= 3 %}
+                            <span class="badge bg-warning text-dark">{{ f.days_overdue }}d overdue</span>
+                        {% elif f.days_overdue >= 1 %}
+                            <span class="badge bg-info">{{ f.days_overdue }}d overdue</span>
+                        {% else %}
+                            <span class="badge bg-light text-dark">Due today</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="d-flex gap-1 flex-wrap align-items-center">
+                            <!-- Send Now -->
+                            <form method="POST" action="/tracking/follow_up" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="email_id" value="{{ f.email_id }}">
+                                <input type="hidden" name="customer_id" value="{{ f.customer_id }}">
+                                <input type="hidden" name="stage" value="{{ f.next_stage }}">
+                                <button type="submit" class="btn btn-success btn-sm"
+                                    onclick="return confirm('Send follow-up to {{ f.company_name|e }}?\n\nStage {{ f.next_stage }}: {{ f.next_stage_name }}\nAttachments: {{ f.next_attachments|join(", ") }}')">
+                                    <i class="bi bi-send me-1"></i>Send
+                                </button>
+                            </form>
+                            <!-- Quick Snooze Buttons -->
+                            <div class="btn-group" role="group">
+                                {% for days in [3, 7, 14] %}
+                                <form method="POST" action="/tracking/snooze" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <input type="hidden" name="email_id" value="{{ f.email_id }}">
+                                    <input type="hidden" name="snooze_days" value="{{ days }}">
+                                    <input type="hidden" name="company_name" value="{{ f.company_name|e }}">
+                                    <button type="submit" class="btn btn-outline-info btn-sm" title="Snooze {{ days }} days">
+                                        <i class="bi bi-alarm me-1"></i>{{ days }}d
+                                    </button>
+                                </form>
+                                {% endfor %}
+                            </div>
+                            <!-- Skip -->
+                            <form method="POST" action="/tracking/skip" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="email_id" value="{{ f.email_id }}">
+                                <button type="submit" class="btn btn-outline-danger btn-sm"
+                                    onclick="return confirm('Skip follow-up for {{ f.company_name|e }}? This email will be removed from the queue.')"
+                                    title="Skip this follow-up">
+                                    <i class="bi bi-x-lg"></i>
+                                </button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+            {% else %}
+                <tr><td colspan="7" class="text-center text-muted py-4">
+                    <i class="bi bi-check-circle" style="font-size:1.5rem;"></i>
+                    <p class="mt-2 mb-0">No follow-ups due! All emails are within their stage delay period.</p>
+                </td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+<p class="text-muted mt-2"><small>{{ followup_queue|length }} follow-up(s) due</small></p>
+
+{% else %}
+<!-- Search -->
+<div class="mb-3">
+    <input type="text" id="trackingSearch" class="form-control table-search" placeholder="Search emails...">
+</div>
+
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0" id="trackingTable">
+            <thead>
+                <tr><th>ID</th><th>Company / Email</th><th>Subject</th><th>Stage</th><th>Files</th><th>Date</th><th>Status</th><th>Reply / Request</th><th>Action</th></tr>
+            </thead>
+            <tbody>
+            {% for e in emails %}
+                {% set status = e.get('status', '-') %}
+                {% set status_colors = {'sent': 'success', 'queued': 'primary', 'draft': 'secondary', 'failed': 'danger', 'replied': 'info', 'followed_up': 'dark'} %}
+                {% set status_badge = status_colors.get(status, 'secondary') %}
+                {% set replied = e.get('replied', 'no') %}
+                {% set p_stage = e.get('pipeline_stage', '-')|string %}
+                {% set att = e.get('attachments', '') %}
+                {% set att_count = att|string|split_semi|length if att else 0 %}
+                {% set reply_summary = e.get('reply_content_summary', '')|string %}
+                {% set detected = e.get('detected_stage', '')|string %}
+                {% set req_type = '' %}
+
+                <tr>
+                    <td><small class="text-muted">{{ e.get('email_id', '-') }}</small></td>
+                    <td><a href="/customers/{{ e.get('customer_id', '') }}" class="text-decoration-none"><strong>{{ e.get('company_name', '-')|e }}</strong></a><br><small class="text-muted">{{ e.get('contact_email', '')|e }}</small></td>
+                    <td><small>{{ e.get('subject', '-')|e|truncate(40) }}</small></td>
+                    <td><span class="badge bg-secondary">{{ p_stage }}</span></td>
+                    <td>
+                        {% if att_count > 0 %}
+                        <span class="badge bg-light text-dark"><i class="bi bi-paperclip"></i> {{ att_count }}</span>
+                        {% else %}-{% endif %}
+                    </td>
+                    <td>{{ e.get('sent_date', '-') }}<br><small class="text-muted">{{ e.get('sent_time', '') }}</small></td>
+                    <td><span class="badge bg-{{ status_badge }}">{{ status }}</span></td>
+                    <td>
+                        {% if replied == 'yes' %}
+                            <span class="badge bg-success">Replied</span>
+                            {% if reply_summary.startswith('[') and ']' in reply_summary %}
+                                {% set rtype = reply_summary[1:reply_summary.index(']')] %}
+                                {% set type_colors = {'Quotation Request': 'danger', 'Sample Request': 'warning', 'Technical Info Request': 'primary', 'Info Request': 'info', 'Contract Request': 'danger', 'Declined': 'dark', 'Repeat Order': 'success'} %}
+                                <br><span class="badge bg-{{ type_colors.get(rtype, 'secondary') }}">{{ rtype }}</span>
+                            {% endif %}
+                        {% else %}
+                            <span class="badge bg-light text-muted">-</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if replied == 'yes' and status == 'replied' and detected and detected.isdigit() %}
+                            {% set detected_info = pipeline_stages.get(detected|int, {}) %}
+                            {% set detected_attachments = detected_info.get('attachments', []) %}
+                            {% set att_text = detected_attachments|join(', ') if detected_attachments else 'follow-up email' %}
+                            <form method="POST" action="/tracking/follow_up" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="email_id" value="{{ e.get('email_id', '') }}">
+                                <input type="hidden" name="customer_id" value="{{ e.get('customer_id', '') }}">
+                                <input type="hidden" name="stage" value="{{ detected }}">
+                                <button type="submit" class="btn btn-warning btn-sm"
+                                    title="Reply with: {{ att_text|e }}"
+                                    onclick="return confirm('Send follow-up to {{ e.get('company_name', '')|e }}?\n\nAttachments: {{ att_text|e }}')">
+                                    <i class="bi bi-reply me-1"></i>Send
+                                </button>
+                                <br><small class="text-muted mt-1">{{ att_text|e }}</small>
+                            </form>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% else %}
+                <tr><td colspan="9" class="text-center text-muted py-4">No emails found</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if total_pages > 1 %}
+<nav class="mt-3">
+    <ul class="pagination justify-content-center">
+        <li class="page-item {{ 'disabled' if page <= 1 }}">
+            <a class="page-link" href="?tab={{ tab }}&page={{ page - 1 }}">Previous</a>
+        </li>
+        {% for p in range(1, total_pages + 1) %}
+        <li class="page-item {{ 'active' if p == page }}">
+            <a class="page-link" href="?tab={{ tab }}&page={{ p }}">{{ p }}</a>
+        </li>
+        {% endfor %}
+        <li class="page-item {{ 'disabled' if page >= total_pages }}">
+            <a class="page-link" href="?tab={{ tab }}&page={{ page + 1 }}">Next</a>
+        </li>
+    </ul>
+</nav>
+{% endif %}
+
+<p class="text-muted mt-2"><small>Showing {{ emails|length }} of {{ total_count }} emails</small></p>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>initTableSearch('trackingSearch', 'trackingTable'); initTableSort('trackingTable');</script>
+{% endblock %}

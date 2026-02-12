@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Batch Send{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center">
+    <h2><i class="bi bi-send-check me-2"></i>Batch Send by Pipeline Stage</h2>
+    <span class="badge bg-dark fs-6">{{ total_customers }} Total Customers</span>
+</div>
+
+<div class="alert alert-info">
+    <i class="bi bi-info-circle me-2"></i>
+    <strong>How it works:</strong> Each pipeline stage has specific attachments. Click "Send Selected" to generate AI-personalized emails with the correct PDFs for each customer, then send via Gmail.
+    <br><small>Signed as: <strong>{{ sender_name }}</strong>, {{ sender_title }} - {{ company_name }}</small>
+    <br><small class="mt-1 d-block">Customers per stage:
+        {% for sn in pipeline_stages.keys()|sort %}
+            {% set sc = stage_groups.get(sn, [])|length %}
+            {% set stage_colors = {1: 'primary', 2: 'info', 3: 'success', 4: 'warning', 5: 'danger', 6: 'dark', 7: 'primary', 8: 'info', 9: 'success', 10: 'secondary'} %}
+            <span class="badge bg-{{ stage_colors.get(sn, 'secondary') }} me-1">{{ sn }}: {{ sc }}</span>
+        {% endfor %}
+    </small>
+</div>
+
+{% for stage_num in pipeline_stages.keys()|sort %}
+    {% set stage_info = pipeline_stages[stage_num] %}
+    {% set customers_in_stage = stage_groups.get(stage_num, []) %}
+    {% set count = customers_in_stage|length %}
+    {% set stage_colors = {1: 'primary', 2: 'info', 3: 'success', 4: 'warning', 5: 'danger', 6: 'dark', 7: 'primary', 8: 'info', 9: 'success', 10: 'secondary'} %}
+    {% set color = stage_colors.get(stage_num, 'secondary') %}
+
+    {% if count > 0 %}
+    <form method="POST" action="/batch_send/run">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="stage" value="{{ stage_num }}">
+    <div class="card mb-3">
+        <div class="card-header bg-{{ color }} bg-opacity-10 d-flex justify-content-between align-items-center">
+            <div>
+                <h5 class="mb-0"><span class="badge bg-{{ color }} me-2">{{ stage_num }}</span>{{ stage_info.name }}</h5>
+                <small class="text-muted">{{ count }} customer(s) &middot; Attachments:
+                    {% for att in stage_info.get('attachments', []) %}
+                        <span class="badge bg-light text-dark me-1"><i class="bi bi-paperclip"></i> {{ att }}</span>
+                    {% else %}<em>None</em>{% endfor %}
+                </small>
+            </div>
+            <div class="d-flex gap-2 align-items-center">
+                <div class="form-check form-check-inline mb-0">
+                    <input type="checkbox" class="form-check-input" id="selectAll{{ stage_num }}"
+                           onclick="document.querySelectorAll('.stage-{{ stage_num }}-cb').forEach(cb=>cb.checked=this.checked)">
+                    <label class="form-check-label small" for="selectAll{{ stage_num }}">Select All</label>
+                </div>
+                <button type="submit" class="btn btn-success btn-sm"
+                    onclick="var checked=document.querySelectorAll('.stage-{{ stage_num }}-cb:checked').length; if(checked==0){alert('Select at least 1 customer');return false;} return confirm('Send AI emails to '+checked+' selected customer(s) in Stage {{ stage_num }}?')">
+                    <i class="bi bi-send me-1"></i>Send Selected
+                </button>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+                <thead><tr><th width="40"></th><th>Company</th><th>Contact</th><th>Email</th><th>Engagement</th><th width="60">Action</th></tr></thead>
+                <tbody>
+                {% for c in customers_in_stage %}
+                    {% set eng = c.get('engagement_level', '')|string|upper %}
+                    {% set eng_color = {'HOT': 'danger', 'WARM': 'warning', 'INTERESTED': 'info', 'COLD': 'secondary'}.get(eng, 'light') %}
+                    <tr>
+                        <td><input type="checkbox" class="form-check-input stage-{{ stage_num }}-cb" name="customer_ids" value="{{ c.get('id', '') }}"></td>
+                        <td><strong>{{ c.get('company_name', '')|e }}</strong></td>
+                        <td>{{ c.get('contact_name', '')|e }}</td>
+                        <td><small>{{ c.get('contact_email', '')|e }}</small></td>
+                        <td><span class="badge bg-{{ eng_color }}">{{ eng or '-' }}</span></td>
+                        <td>
+                            <button type="button" class="btn btn-outline-success btn-sm" onclick="sendOne('{{ c.get('id', '') }}', {{ stage_num }}, this)" title="Send to this customer">
+                                <i class="bi bi-send"></i>
+                            </button>
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    </form>
+    {% else %}
+    <div class="card mb-3 opacity-75">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+            <div>
+                <h5 class="mb-0"><span class="badge bg-{{ color }} me-2">{{ stage_num }}</span>{{ stage_info.name }}</h5>
+                <small class="text-muted">0 customers</small>
+            </div>
+            <span class="badge bg-light text-muted">No customers</span>
+        </div>
+    </div>
+    {% endif %}
+{% endfor %}
+{% endblock %}

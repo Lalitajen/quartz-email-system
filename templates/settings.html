@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2><i class="bi bi-gear me-2"></i>Settings</h2>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card p-4 mb-4">
+            <h5><i class="bi bi-envelope me-2"></i>Email Settings</h5>
+            <hr>
+            <form method="POST" action="/settings/save">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="mb-3">
+                    <label class="form-label">Sender Name</label>
+                    <input type="text" class="form-control" name="SENDER_NAME" value="{{ settings.get('SENDER_NAME', '')|e }}" maxlength="100">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Sender Email</label>
+                    <input type="email" class="form-control" name="SENDER_EMAIL" value="{{ settings.get('SENDER_EMAIL', '')|e }}" maxlength="254">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Sender Title</label>
+                    <input type="text" class="form-control" name="SENDER_TITLE" value="{{ settings.get('SENDER_TITLE', '')|e }}" placeholder="e.g. Business Development Manager" maxlength="100">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Company Name</label>
+                    <input type="text" class="form-control" name="COMPANY_NAME" value="{{ settings.get('COMPANY_NAME', '')|e }}" placeholder="e.g. Lorh La Seng Commercial" maxlength="200">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Company Phone</label>
+                    <input type="text" class="form-control" name="COMPANY_PHONE" value="{{ settings.get('COMPANY_PHONE', '')|e }}" placeholder="e.g. +856 20 xxxx xxxx" maxlength="30">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Company Website</label>
+                    <input type="text" class="form-control" name="COMPANY_WEBSITE" value="{{ settings.get('COMPANY_WEBSITE', '')|e }}" placeholder="e.g. www.lorhquartz.com" maxlength="200">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Company Address</label>
+                    <input type="text" class="form-control" name="COMPANY_ADDRESS" value="{{ settings.get('COMPANY_ADDRESS', '')|e }}" maxlength="300">
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Max Emails/Day</label>
+                        <input type="number" class="form-control" name="MAX_EMAILS_PER_DAY" value="{{ settings.get('MAX_EMAILS_PER_DAY', '50') }}">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Research Delay (sec)</label>
+                        <input type="number" class="form-control" name="RESEARCH_DELAY_SECONDS" value="{{ settings.get('RESEARCH_DELAY_SECONDS', '2') }}">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Max Research/Run</label>
+                        <input type="number" class="form-control" name="MAX_RESEARCH_PER_RUN" value="{{ settings.get('MAX_RESEARCH_PER_RUN', '5') }}">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Email Check Interval (hrs)</label>
+                        <input type="number" class="form-control" name="EMAIL_CHECK_INTERVAL_HOURS" value="{{ settings.get('EMAIL_CHECK_INTERVAL_HOURS', '24') }}">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Auto-Reply Confidence</label>
+                        <input type="number" step="0.1" min="0" max="1" class="form-control" name="AUTO_REPLY_CONFIDENCE_THRESHOLD" value="{{ settings.get('AUTO_REPLY_CONFIDENCE_THRESHOLD', '0.8') }}">
+                        <small class="text-muted">Min confidence for auto-replies (0-1)</small>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Follow-up After (days)</label>
+                        <input type="number" min="1" max="30" class="form-control" name="FOLLOWUP_DAYS" value="{{ settings.get('FOLLOWUP_DAYS', '3') }}">
+                        <small class="text-muted">Auto follow-up if no reply after X days</small>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary w-100"><i class="bi bi-save me-1"></i>Save Settings</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card p-4 mb-4">
+            <h5><i class="bi bi-key me-2"></i>API & Credentials</h5>
+            <hr>
+            <div class="mb-3">
+                <label class="form-label">Anthropic API Key</label>
+                <div class="input-group">
+                    <input type="password" class="form-control" value="********" disabled>
+                    <span class="input-group-text"><i class="bi bi-check-circle text-success"></i></span>
+                </div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Google Sheets ID</label>
+                <input type="text" class="form-control" value="{{ settings.get('GOOGLE_SHEETS_ID', '')|e }}" disabled>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Gmail Credentials</label>
+                <input type="text" class="form-control" value="{{ settings.get('GMAIL_CREDENTIALS_PATH', 'gmail_credentials.json') }}" disabled>
+            </div>
+            <small class="text-muted">Edit API keys directly in config/.env</small>
+        </div>
+
+        <div class="card p-4">
+            <h5><i class="bi bi-info-circle me-2"></i>System Info</h5>
+            <hr>
+            <table class="table table-sm mb-0">
+                <tr><td class="text-muted">Version</td><td>3.0 (Refactored)</td></tr>
+                <tr><td class="text-muted">AI Model</td><td>Claude Sonnet</td></tr>
+                <tr><td class="text-muted">Database</td><td>Google Sheets</td></tr>
+                <tr><td class="text-muted">Email Provider</td><td>Gmail API</td></tr>
+                <tr><td class="text-muted">Compliance</td><td>GDPR + CAN-SPAM</td></tr>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

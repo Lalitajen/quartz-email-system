@@ -1,0 +1,8 @@
+stage_number,stage_name,key_signals,default_attachments,typical_duration_days,conversion_rate_target,automation_rules
+1,Prospecting,Outbound no response yet,brochure.pdf;company_profile.pdf,7,15%,Auto-follow-up after 3 days if no response
+2,Initial Contact,General interest shown,technical_sheet.pdf;product_catalog.pdf,5,30%,Send technical specs within 24 hours
+3,Qualification,Asking specs questionnaire,questionnaire.pdf;spec_sheet.pdf,10,50%,AI to fill questionnaire based on research
+4,Sample & Testing,Sample request awaiting lab,sample_request_form.pdf;coa.pdf,30,60%,Schedule sample shipment and follow-up
+5,Negotiation,Quotation price negotiation,quotation_personalized.pdf,14,70%,Auto-generate quotation with pricing matrix
+6,Contract,Draft contract signing,contract_template.pdf;terms.pdf,21,80%,Legal review required before sending
+7,Fulfillment,Delivery maintenance,shipping_docs.pdf;invoice.pdf,60,95%,Generate shipping and invoice documents

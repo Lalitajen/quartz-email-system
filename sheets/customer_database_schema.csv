@@ -1,0 +1,4 @@
+id,company_name,company_email,company_website,contact_name,contact_email,contact_department,pipeline_stage,tags,research_status,research_summary,pain_points,last_contact_date,response_status,notes
+CUST001,ABC Semiconductors,info@abcsemi.com,https://abcsemi.com,John Smith,john.smith@abcsemi.com,Purchasing,1,hot;semiconductor,completed,Leading semiconductor manufacturer in Taiwan specializing in high-purity silicon wafers,Need consistent supply of 4N+ quartz,2026-02-01,pending,Initial outreach sent
+CUST002,XYZ Optics Ltd,contact@xyzoptics.com,https://xyzoptics.com,Sarah Johnson,s.johnson@xyzoptics.com,Procurement,2,priority;optical,completed,Optical components manufacturer for telecom industry,Looking for optical-grade quartz,2026-01-28,responded,Showed interest in technical specs
+CUST003,Solar Tech Industries,sales@solartech.com,https://solartech.com,Mike Chen,m.chen@solartech.com,Supply Chain,1,solar,pending,,,2026-02-03,no_contact,Research in progress

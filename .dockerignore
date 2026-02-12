@@ -1,0 +1,27 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+logs/
+.git/
+.vscode/
+.idea/
+*.swp
+.DS_Store
+tests/
+scripts/web_app_old.py
+test_*.py
+
+# Credentials (injected via env vars at runtime)
+config/.env
+config/.flask_secret
+token.json
+token.pickle
+service_account.json
+gmail_credentials.json
+
+# Docs
+README.md
+*.md
+render.yaml
+docker-compose.yml

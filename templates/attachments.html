@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}Attachments{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-paperclip me-2"></i>Attachment Management</h2>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#uploadModal">
+        <i class="bi bi-upload me-1"></i>Upload New PDF
+    </button>
+</div>
+
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="alert alert-info">
+            <i class="bi bi-info-circle me-2"></i>
+            <strong>How it works:</strong> Assign PDF attachments to each pipeline stage. When sending emails,
+            the system will automatically attach the correct files based on the customer's current stage.
+        </div>
+    </div>
+</div>
+
+<h4 class="mb-3">Pipeline Stages & Attachments</h4>
+<div class="row">
+    {% for stage_num in pipeline_stages.keys()|sort %}
+        {% set stage = pipeline_stages[stage_num] %}
+        {% set stage_name = stage.name %}
+        {% set attachments = stage.get('attachments', []) %}
+        {% set trigger_keywords = stage.get('trigger_keywords', [])|join(', ') %}
+        {% set colors = ['primary', 'info', 'success', 'warning', 'danger', 'dark', 'secondary'] %}
+        {% set color = colors[(stage_num - 1) % 7] %}
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-{{ color }} bg-opacity-10 d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="badge bg-{{ color }} me-2">{{ stage_num }}</span>
+                        <strong>{{ stage_name }}</strong>
+                    </div>
+                    <button class="btn btn-sm btn-light" onclick="editStage({{ stage_num }})">
+                        <i class="bi bi-pencil"></i> Edit
+                    </button>
+                </div>
+                <div class="card-body">
+                    <h6 class="text-muted mb-2"><i class="bi bi-paperclip"></i> Attachments:</h6>
+                    <div class="mb-3">
+                        {% for att in attachments %}
+                            {% set exists = att in pdf_files %}
+                            {% set badge_color = 'success' if exists else 'danger' %}
+                            {% set icon = 'check-circle' if exists else 'exclamation-triangle' %}
+                            <span class="badge bg-{{ badge_color }} me-1"><i class="bi bi-{{ icon }}"></i> {{ att }}</span>
+                        {% else %}
+                            <span class="text-muted"><i>No attachments</i></span>
+                        {% endfor %}
+                    </div>
+                    <h6 class="text-muted mb-2"><i class="bi bi-key"></i> Trigger Keywords:</h6>
+                    <p class="text-sm text-muted">{{ trigger_keywords or '<i>None</i>'|safe }}</p>
+                </div>
+            </div>
+        </div>
+    {% endfor %}
+</div>
+
+<hr class="my-5">
+
+<h4 class="mb-3">Available PDF Files</h4>
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Filename</th>
+                    <th>Size</th>
+                    <th>Last Modified</th>
+                    <th>Usage</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for pdf in pdf_file_info %}
+                <tr>
+                    <td><i class="bi bi-file-pdf text-danger me-2"></i><strong>{{ pdf.name }}</strong></td>
+                    <td>{{ pdf.size }} KB</td>
+                    <td>{{ pdf.date }}</td>
+                    <td>{{ pdf.usage|safe }}</td>
+                    <td>
+                        <a href="/attachments/download/{{ pdf.name }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-download"></i></a>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteFile('{{ pdf.name|e }}')"><i class="bi bi-trash"></i></button>
+                    </td>
+                </tr>
+            {% else %}
+                <tr><td colspan="5" class="text-center text-muted">No PDF files found</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Upload Modal -->
+<div class="modal fade" id="uploadModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-upload me-2"></i>Upload PDF Attachment</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="/attachments/upload" method="POST" enctype="multipart/form-data">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Select PDF File</label>
+                        <input type="file" class="form-control" name="pdf_file" accept=".pdf" required>
+                        <div class="form-text">Maximum file size: 10 MB</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Upload</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Stage Modal -->
+<div class="modal fade" id="editStageModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-pencil me-2"></i>Edit Stage Attachments</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="editStageForm" action="/attachments/update-stage" method="POST">
+                <div class="modal-body">
+                    <input type="hidden" name="stage_number" id="editStageNumber">
+                    <div class="mb-3">
+                        <label class="form-label"><strong>Stage:</strong> <span id="editStageName"></span></label>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Select PDF Attachments (hold Ctrl/Cmd to select multiple)</label>
+                        <select class="form-control" name="attachments" id="editStageAttachments" multiple size="10">
+                            {% for pdf in pdf_files %}
+                            <option value="{{ pdf }}">{{ pdf }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">Hold Ctrl (Windows) or Cmd (Mac) to select multiple files</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function editStage(stageNum) {
+    const stages = {{ pipeline_stages_json|safe }};
+    const stage = stages[stageNum];
+
+    document.getElementById('editStageNumber').value = stageNum;
+    document.getElementById('editStageName').textContent = stage.name;
+
+    const select = document.getElementById('editStageAttachments');
+    for (let opt of select.options) {
+        opt.selected = stage.attachments.includes(opt.value);
+    }
+
+    new bootstrap.Modal(document.getElementById('editStageModal')).show();
+}
+</script>
+{% endblock %}
