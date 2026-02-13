@@ -16,7 +16,7 @@ COPY wsgi.py .
 COPY config/.env.template config/.env.template
 
 # Create directories for runtime
-RUN mkdir -p logs attachments
+RUN mkdir -p logs attachments data
 
 # Render sets PORT dynamically
 ENV PORT=5000

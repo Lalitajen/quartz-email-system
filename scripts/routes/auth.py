@@ -1,9 +1,9 @@
-"""Authentication routes."""
+"""Authentication routes with multi-user registration and login."""
 
 import time
 import logging
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, current_app
-from werkzeug.security import check_password_hash, generate_password_hash
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session
+from app_core import is_valid_email
 
 auth_bp = Blueprint('auth', __name__)
 logger = logging.getLogger('quartz_web')
@@ -21,7 +21,6 @@ def _check_lockout(ip):
         if attempts >= MAX_FAILED_ATTEMPTS:
             if time.time() - lockout_time < LOCKOUT_SECONDS:
                 return True
-            # Lockout expired, reset
             del _failed_attempts[ip]
     return False
 
@@ -42,45 +41,93 @@ def _clear_failed(ip):
 
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
+    if session.get('authenticated'):
+        return redirect(url_for('dashboard.dashboard'))
+
     if request.method == 'POST':
         client_ip = request.remote_addr
 
-        # Check brute force lockout
         if _check_lockout(client_ip):
             logger.warning(f"Login blocked - IP locked out: {client_ip}")
             flash('Too many failed attempts. Please try again later.', 'danger')
             return render_template('login.html'), 429
 
-        username = request.form.get('username', '')
+        email = request.form.get('email', '').strip().lower()
         password = request.form.get('password', '')
-        stored_password = current_app.config['APP_PASSWORD']
 
-        # Support both hashed and plaintext passwords for backward compatibility
-        if username == current_app.config['APP_USERNAME']:
-            password_ok = False
-            if stored_password.startswith(('pbkdf2:', 'scrypt:')):
-                password_ok = check_password_hash(stored_password, password)
-            else:
-                password_ok = (password == stored_password)
+        from models import User
+        user = User.get_by_email(email)
 
-            if password_ok:
-                _clear_failed(client_ip)
-                session.permanent = True
-                session['authenticated'] = True
-                logger.info(f"Login successful: user={username} ip={client_ip}")
-                flash('Welcome back!', 'success')
-                return redirect(url_for('dashboard.dashboard'))
+        if user and user.is_active and user.verify_password(password):
+            _clear_failed(client_ip)
+            session.permanent = True
+            session['authenticated'] = True
+            session['user_id'] = user.id
+            session['user_role'] = user.role
+            session['user_display_name'] = user.display_name or email
+            user.update_last_login()
+            logger.info(f"Login successful: user={email} ip={client_ip}")
+            flash(f'Welcome back, {user.display_name or email}!', 'success')
+            return redirect(url_for('dashboard.dashboard'))
 
-        # Failed login
         _record_failed(client_ip)
-        logger.warning(f"Login failed: user={username} ip={client_ip}")
-        flash('Invalid credentials.', 'danger')
+        logger.warning(f"Login failed: email={email} ip={client_ip}")
+        flash('Invalid email or password.', 'danger')
+
     return render_template('login.html')
+
+
+@auth_bp.route('/register', methods=['GET', 'POST'])
+def register():
+    if session.get('authenticated'):
+        return redirect(url_for('dashboard.dashboard'))
+
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip().lower()
+        display_name = request.form.get('display_name', '').strip()
+        password = request.form.get('password', '')
+        confirm = request.form.get('confirm_password', '')
+
+        # Validate
+        if not email or not is_valid_email(email):
+            flash('Please enter a valid email address.', 'danger')
+            return render_template('register.html')
+
+        if not display_name:
+            flash('Please enter your name.', 'danger')
+            return render_template('register.html')
+
+        if len(password) < 8:
+            flash('Password must be at least 8 characters.', 'danger')
+            return render_template('register.html')
+
+        if password != confirm:
+            flash('Passwords do not match.', 'danger')
+            return render_template('register.html')
+
+        from models import User
+        user = User.create(email=email, password=password, display_name=display_name)
+
+        if not user:
+            flash('An account with this email already exists.', 'danger')
+            return render_template('register.html')
+
+        # Auto-login after registration
+        session.permanent = True
+        session['authenticated'] = True
+        session['user_id'] = user.id
+        session['user_role'] = user.role
+        session['user_display_name'] = user.display_name
+        logger.info(f"New user registered: {email}")
+        flash('Account created! Let\'s set up your credentials.', 'success')
+        return redirect(url_for('setup.setup_step', step=1))
+
+    return render_template('register.html')
 
 
 @auth_bp.route('/logout')
 def logout():
-    logger.info(f"Logout: ip={request.remote_addr}")
+    logger.info(f"Logout: user_id={session.get('user_id')} ip={request.remote_addr}")
     session.clear()
     flash('Logged out successfully.', 'info')
     return redirect(url_for('auth.login'))

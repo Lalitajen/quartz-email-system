@@ -94,13 +94,24 @@ class GoogleSheetsManager:
         self.sheets = {}
         
     def authenticate(self):
-        """Authenticate with Google Sheets API"""
+        """Authenticate with Google Sheets API using service account file."""
         scope = [
             'https://www.googleapis.com/auth/spreadsheets',
             'https://www.googleapis.com/auth/drive'
         ]
         sa_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'service_account.json')
         creds = Credentials.from_service_account_file(sa_path, scopes=scope)
+        self.client = gspread.authorize(creds)
+        self.workbook = self.client.open_by_key(self.spreadsheet_id)
+
+    def authenticate_from_json(self, service_account_json: str):
+        """Authenticate using service account JSON string (from database)."""
+        scope = [
+            'https://www.googleapis.com/auth/spreadsheets',
+            'https://www.googleapis.com/auth/drive'
+        ]
+        sa_info = json.loads(service_account_json) if isinstance(service_account_json, str) else service_account_json
+        creds = Credentials.from_service_account_info(sa_info, scopes=scope)
         self.client = gspread.authorize(creds)
         self.workbook = self.client.open_by_key(self.spreadsheet_id)
         

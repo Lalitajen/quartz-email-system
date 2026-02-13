@@ -4,7 +4,7 @@ import json
 from collections import Counter
 from datetime import datetime, timedelta
 from flask import Blueprint, render_template
-from app_core import login_required, cached_get_customers, get_sheets, PIPELINE_STAGES, MAX_EMAILS_PER_DAY
+from app_core import login_required, cached_get_customers, get_sheets, PIPELINE_STAGES, get_user_config
 
 dashboard_bp = Blueprint('dashboard', __name__)
 
@@ -12,6 +12,7 @@ dashboard_bp = Blueprint('dashboard', __name__)
 @dashboard_bp.route('/')
 @login_required
 def dashboard():
+    max_emails = get_user_config('max_emails_per_day', 50)
     try:
         sheets = get_sheets()
         customers = cached_get_customers()
@@ -23,7 +24,7 @@ def dashboard():
                                pending_reviews=0, researched=0, emails_queued=0,
                                warm=0, interested=0, cold=0, unsegmented=0,
                                pipeline_stages=PIPELINE_STAGES, stage_counts={},
-                               today_sent=0, today_replies=0, max_emails_per_day=MAX_EMAILS_PER_DAY,
+                               today_sent=0, today_replies=0, max_emails_per_day=max_emails,
                                now=datetime.now().strftime('%B %d, %Y %H:%M'),
                                high_intent_count=0, upsell_candidates=0, analyzed_count=0)
 
@@ -42,7 +43,6 @@ def dashboard():
     unresponsive = len([c for c in customers if str(c.get('engagement_level', '')).upper() == 'UNRESPONSIVE'])
     unsegmented = total_customers - hot - warm - interested - cold - unresponsive
 
-    # AI Insights summary
     high_intent_count = len([c for c in customers if str(c.get('buying_intent', '')).lower() == 'high'])
     upsell_candidates = len([c for c in customers
         if str(c.get('pipeline_stage', '1')).isdigit()
@@ -59,7 +59,6 @@ def dashboard():
     today_sent = len([e for e in emails if e.get('sent_date') == today and e.get('status') == 'sent'])
     today_replies = len([e for e in emails if e.get('reply_date') == today])
 
-    # Daily email activity for chart (last 14 days)
     daily_sent = Counter()
     daily_replies = Counter()
     for e in emails:
@@ -76,7 +75,7 @@ def dashboard():
     reply_data = []
     for i in range(chart_days - 1, -1, -1):
         d = (datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d')
-        date_labels.append(d[-5:])  # MM-DD format
+        date_labels.append(d[-5:])
         sent_data.append(daily_sent.get(d, 0))
         reply_data.append(daily_replies.get(d, 0))
 
@@ -94,7 +93,7 @@ def dashboard():
         stage_counts=stage_counts,
         today_sent=today_sent,
         today_replies=today_replies,
-        max_emails_per_day=MAX_EMAILS_PER_DAY,
+        max_emails_per_day=max_emails,
         now=datetime.now().strftime('%B %d, %Y %H:%M'),
         chart_labels=json.dumps(date_labels),
         chart_sent=json.dumps(sent_data),

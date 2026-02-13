@@ -5,9 +5,9 @@ import signal
 import subprocess
 from datetime import datetime, timedelta
 from flask import Blueprint, render_template, redirect, url_for, flash, jsonify, request
-from app_core import (login_required, PIPELINE_STAGES, get_sheets, FOLLOWUP_DAYS,
-                      EmailTracker, GMAIL_CREDS, SPAM_DOMAINS, classify_reply, logger,
-                      safe_flash_error)
+from app_core import (login_required, PIPELINE_STAGES, get_sheets, get_user_config,
+                      SPAM_DOMAINS, classify_reply, logger,
+                      safe_flash_error, get_gmail_service_for_user, EmailTracker)
 
 auto_reply_bp = Blueprint('auto_reply', __name__)
 
@@ -17,7 +17,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 @auto_reply_bp.route('/auto-reply')
 @login_required
 def auto_reply_page():
-    # Load daemon integration
+    followup_days = get_user_config('followup_days', 3)
+
     daemon_status = {'running': False, 'pid': None, 'status': 'STOPPED'}
     statistics = {}
     recent_activity = []
@@ -42,7 +43,6 @@ def auto_reply_page():
     except Exception as e:
         logger.error(f"Auto-reply page error: {e}")
 
-    # Load reply inbox from Email_Tracking (recent replies needing action)
     reply_inbox = []
     reply_stats = {'total_replies': 0, 'needs_action': 0, 'hot_leads': 0, 'declined': 0}
     try:
@@ -58,7 +58,6 @@ def auto_reply_page():
             reply_stats['total_replies'] += 1
 
             reply_summary = str(e.get('reply_content_summary', ''))
-            # Extract request type from [Type] prefix
             req_type = ''
             if reply_summary.startswith('[') and ']' in reply_summary:
                 req_type = reply_summary[1:reply_summary.index(']')]
@@ -68,7 +67,6 @@ def auto_reply_page():
             elif req_type == 'Declined':
                 reply_stats['declined'] += 1
 
-            # Check if action still needed (status is 'replied', not 'followed_up')
             status = e.get('status', '')
             if status == 'replied':
                 reply_stats['needs_action'] += 1
@@ -92,13 +90,11 @@ def auto_reply_page():
                     'engagement': customer.get('engagement_level', ''),
                 })
 
-        # Sort by reply_date newest first
         reply_inbox.sort(key=lambda x: x.get('reply_date', ''), reverse=True)
 
     except Exception as e:
         logger.error(f"Reply inbox load error: {e}")
 
-    # Count emails summary for quick overview
     email_summary = {'total': 0, 'sent': 0, 'queued': 0, 'stale': 0}
     try:
         now = datetime.now()
@@ -107,13 +103,12 @@ def auto_reply_page():
             st = e.get('status', '')
             if st == 'sent':
                 email_summary['sent'] += 1
-                # Check if stale
                 sent_date_str = e.get('sent_date', '')
                 if sent_date_str and e.get('replied', 'no') != 'yes':
                     try:
                         sent_date = datetime.strptime(sent_date_str, '%Y-%m-%d')
                         current_stage = int(e.get('pipeline_stage', 1)) if str(e.get('pipeline_stage', '1')).isdigit() else 1
-                        delay = PIPELINE_STAGES.get(current_stage, {}).get('followup_days', FOLLOWUP_DAYS)
+                        delay = PIPELINE_STAGES.get(current_stage, {}).get('followup_days', followup_days)
                         if delay > 0 and (now - sent_date).days >= delay:
                             email_summary['stale'] += 1
                     except ValueError:
@@ -141,10 +136,12 @@ def auto_reply_page():
 @auto_reply_bp.route('/auto-reply/check-now')
 @login_required
 def check_replies_now():
-    """Manually trigger a reply check (same as tracking check_replies but redirects here)."""
+    """Manually trigger a reply check."""
     try:
-        tracker = EmailTracker(GMAIL_CREDS)
-        tracker.authenticate()
+        gmail_service = get_gmail_service_for_user()
+        tracker = EmailTracker.__new__(EmailTracker)
+        tracker.service = gmail_service
+
         replies = tracker.check_new_replies(since_hours=48)
 
         if not replies:
@@ -198,7 +195,6 @@ def check_replies_now():
                     time_mod.sleep(0.5)
                     break
 
-        # Log activity
         try:
             from daemon_integration import _load_activities, ACTIVITY_FILE
             import json
@@ -335,6 +331,7 @@ def stop_daemon():
 @login_required
 def daemon_status_api():
     """API endpoint returning all live data for real-time AJAX refresh."""
+    followup_days = get_user_config('followup_days', 3)
     result = {
         'daemon_status': {'running': False, 'pid': None, 'status': 'STOPPED'},
         'statistics': {},
@@ -346,7 +343,6 @@ def daemon_status_api():
         'timestamp': datetime.now().strftime('%H:%M:%S'),
     }
 
-    # Daemon info
     try:
         from daemon_integration import (
             get_daemon_status, get_daemon_statistics,
@@ -361,7 +357,6 @@ def daemon_status_api():
     except Exception as e:
         logger.error(f"Status API daemon error: {e}")
 
-    # Reply inbox + email summary from Sheets
     try:
         sheets = get_sheets()
         tracking_sheet = sheets.get_worksheet('Email_Tracking')
@@ -410,7 +405,6 @@ def daemon_status_api():
         result['reply_inbox'].sort(key=lambda x: x.get('reply_date', ''), reverse=True)
         result['reply_inbox'] = result['reply_inbox'][:20]
 
-        # Email summary
         now = datetime.now()
         for e in emails:
             result['email_summary']['total'] += 1
@@ -422,7 +416,7 @@ def daemon_status_api():
                     try:
                         sent_date = datetime.strptime(sent_date_str, '%Y-%m-%d')
                         current_stage = int(e.get('pipeline_stage', 1)) if str(e.get('pipeline_stage', '1')).isdigit() else 1
-                        delay = PIPELINE_STAGES.get(current_stage, {}).get('followup_days', FOLLOWUP_DAYS)
+                        delay = PIPELINE_STAGES.get(current_stage, {}).get('followup_days', followup_days)
                         if delay > 0 and (now - sent_date).days >= delay:
                             result['email_summary']['stale'] += 1
                     except ValueError:

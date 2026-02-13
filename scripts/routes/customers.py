@@ -6,7 +6,7 @@ import time
 from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, Response
 from app_core import (login_required, get_sheets, invalidate_cache, cached_get_customers,
-                      ENGAGEMENT_COLORS, PIPELINE_STAGES, AIResearchEngine, API_KEY,
+                      ENGAGEMENT_COLORS, PIPELINE_STAGES, AIResearchEngine, get_api_key,
                       is_valid_email, get_segmentation_engine, logger, safe_flash_error)
 
 customers_bp = Blueprint('customers', __name__)
@@ -119,7 +119,6 @@ def import_csv():
         sheet = sheets.get_worksheet('Customers')
         headers = sheet.row_values(1)
 
-        # Build sets of existing emails and company names for duplicate detection
         existing = sheets.get_customers()
         existing_emails = {c.get('contact_email', '').lower() for c in existing if c.get('contact_email')}
         existing_companies = {c.get('company_name', '').lower() for c in existing if c.get('company_name')}
@@ -134,13 +133,11 @@ def import_csv():
             if not is_valid_email(row['contact_email']):
                 skipped += 1
                 continue
-            # Duplicate check
             row_email = row['contact_email'].strip().lower()
             row_company = row['company_name'].strip().lower()
             if row_email in existing_emails or row_company in existing_companies:
                 duplicates += 1
                 continue
-            # Add to existing sets so we also catch duplicates within the CSV itself
             existing_emails.add(row_email)
             existing_companies.add(row_company)
             customer_id = f"CUST{int(time.time())}_{count}"
@@ -191,7 +188,6 @@ def add_customer():
         sheet = sheets.get_worksheet('Customers')
         headers = sheet.row_values(1)
 
-        # Duplicate check: same contact_email or same company_name
         existing = sheets.get_customers()
         company_name = request.form.get('company_name', '').strip()
         dup_email = [c for c in existing if c.get('contact_email', '').lower() == contact_email.lower()]
@@ -227,11 +223,10 @@ def add_customer():
         invalidate_cache()
         logger.info(f"Added customer: {row_data['company_name']}")
 
-        # Auto-research if checkbox is checked and website is provided
         auto_research = request.form.get('auto_research') == 'on'
         if auto_research and row_data['company_website']:
             try:
-                engine = AIResearchEngine(API_KEY)
+                engine = AIResearchEngine(get_api_key())
                 research = engine.research_company(row_data['company_name'], row_data['company_website'])
                 sheets.update_customer(customer_id, {
                     'research_status': 'completed',
@@ -263,16 +258,13 @@ def customer_detail(customer_id):
             flash('Customer not found.', 'danger')
             return redirect(url_for('customers.customers_page'))
 
-        # Get email history for this customer
         sheet_emails = sheets.get_worksheet('Email_Tracking')
         all_emails = sheet_emails.get_all_records()
         customer_emails = [e for e in all_emails
                           if str(e.get('customer_id')) == customer_id
                           or e.get('contact_email') == customer.get('contact_email', '')]
-        # Sort newest first
         customer_emails.sort(key=lambda e: e.get('sent_date', ''), reverse=True)
 
-        # Duplicate detection: find other customers with same email or company name
         this_email = customer.get('contact_email', '').lower()
         this_company = customer.get('company_name', '').lower()
         duplicates = []
@@ -338,7 +330,6 @@ def delete_customer(customer_id):
 
         for idx, record in enumerate(records, start=2):
             if str(record.get('id')) == customer_id:
-                # Check for linked email records
                 try:
                     email_sheet = sheets.get_worksheet('Email_Tracking')
                     all_emails = email_sheet.get_all_records()
@@ -377,18 +368,15 @@ def analyze_customer(customer_id):
             flash('Customer not found.', 'danger')
             return redirect(url_for('customers.customers_page'))
 
-        # Get email history
         sheet_emails = sheets.get_worksheet('Email_Tracking')
         all_emails = sheet_emails.get_all_records()
         customer_emails = [e for e in all_emails
                           if str(e.get('customer_id')) == customer_id
                           or e.get('contact_email') == customer.get('contact_email', '')]
 
-        # Run AI analysis
         engine = get_segmentation_engine()
         analysis = engine.analyze_customer_engagement(customer, customer_emails)
 
-        # Store results back to Google Sheets
         updates = {
             'engagement_level': str(analysis.get('engagement_level', '')),
             'buying_intent': str(analysis.get('buying_intent', '')),

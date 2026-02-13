@@ -3,9 +3,10 @@
 import time
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from app_core import (login_required, get_sheets, cached_get_customers,
-                      EmailPersonalizationEngine, API_KEY, PIPELINE_STAGES,
-                      SENDER_NAME, SENDER_TITLE, COMPANY_NAME, SENDER_EMAIL,
-                      SPAM_DOMAINS, create_email_log, is_valid_email, logger)
+                      EmailPersonalizationEngine, get_api_key, PIPELINE_STAGES,
+                      get_sender_info,
+                      SPAM_DOMAINS, create_email_log, is_valid_email, logger,
+                      get_gmail_service_for_user)
 from services.email_service import send_email_via_gmail
 
 batch_send_bp = Blueprint('batch_send', __name__)
@@ -14,13 +15,14 @@ batch_send_bp = Blueprint('batch_send', __name__)
 @batch_send_bp.route('/batch_send')
 @login_required
 def batch_send_page():
+    sender = get_sender_info()
     try:
         customers = cached_get_customers()
     except Exception as e:
         return render_template('batch_send.html', active_page='batch_send', error=str(e),
                                pipeline_stages=PIPELINE_STAGES, stage_groups={},
-                               total_customers=0, sender_name=SENDER_NAME,
-                               sender_title=SENDER_TITLE, company_name=COMPANY_NAME)
+                               total_customers=0, sender_name=sender['sender_name'],
+                               sender_title=sender['sender_title'], company_name=sender['company_name'])
 
     stage_groups = {}
     for c in customers:
@@ -32,9 +34,9 @@ def batch_send_page():
         pipeline_stages=PIPELINE_STAGES,
         stage_groups=stage_groups,
         total_customers=len(customers),
-        sender_name=SENDER_NAME,
-        sender_title=SENDER_TITLE,
-        company_name=COMPANY_NAME,
+        sender_name=sender['sender_name'],
+        sender_title=sender['sender_title'],
+        company_name=sender['company_name'],
     )
 
 
@@ -53,9 +55,11 @@ def batch_send_run():
     try:
         sheets = get_sheets()
         customers = sheets.get_customers()
-        engine = EmailPersonalizationEngine(API_KEY)
+        engine = EmailPersonalizationEngine(get_api_key())
         stage_info = PIPELINE_STAGES.get(stage, {})
         attachment_files = stage_info.get('attachments', [])
+        sender = get_sender_info()
+        gmail_service = get_gmail_service_for_user()
 
         sent_count = 0
         fail_count = 0
@@ -90,7 +94,9 @@ def batch_send_run():
             body = email_data.get('body', '')
 
             msg_id, error = send_email_via_gmail(to_email, subject, body, attachment_files,
-                                                  sender_name=SENDER_NAME, sender_email=SENDER_EMAIL)
+                                                  sender_name=sender['sender_name'],
+                                                  sender_email=sender['sender_email'],
+                                                  gmail_service=gmail_service)
             if error:
                 logger.warning(f"Send failed for {customer.get('company_name', cid)} ({to_email}): {error}")
                 fail_count += 1

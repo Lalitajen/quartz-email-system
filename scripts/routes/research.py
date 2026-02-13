@@ -3,7 +3,7 @@
 import time
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from app_core import (login_required, get_sheets, cached_get_customers, invalidate_cache,
-                      AIResearchEngine, API_KEY, RESEARCH_DELAY, MAX_RESEARCH_PER_RUN, logger)
+                      AIResearchEngine, get_api_key, get_user_config, logger)
 
 research_bp = Blueprint('research', __name__)
 
@@ -41,7 +41,7 @@ def run_research():
             flash('Customer not found.', 'danger')
             return redirect(url_for('research.research_page'))
 
-        engine = AIResearchEngine(API_KEY)
+        engine = AIResearchEngine(get_api_key())
         research = engine.research_company(customer.get('company_name', ''), customer.get('company_website', ''))
 
         sheets.update_customer(customer_id, {
@@ -70,9 +70,12 @@ def run_research_all():
             flash('No pending research found.', 'info')
             return redirect(url_for('research.research_page'))
 
-        engine = AIResearchEngine(API_KEY)
+        max_per_run = get_user_config('max_research_per_run', 5)
+        delay = get_user_config('research_delay_seconds', 2)
+
+        engine = AIResearchEngine(get_api_key())
         count = 0
-        for customer in pending[:MAX_RESEARCH_PER_RUN]:
+        for customer in pending[:max_per_run]:
             research = engine.research_company(customer.get('company_name', ''), customer.get('company_website', ''))
             sheets.update_customer(str(customer.get('id', '')), {
                 'research_status': 'completed',
@@ -80,7 +83,7 @@ def run_research_all():
                 'pain_points': research.get('pain_points', '')
             })
             count += 1
-            time.sleep(RESEARCH_DELAY)
+            time.sleep(delay)
 
         invalidate_cache()
         logger.info(f"Batch research completed for {count} customers")

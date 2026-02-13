@@ -4,10 +4,9 @@ import time
 from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from app_core import (login_required, get_sheets, cached_get_customers,
-                      EmailPersonalizationEngine, API_KEY, PIPELINE_STAGES, create_email_log,
-                      SENDER_NAME, SENDER_TITLE, COMPANY_NAME, COMPANY_PHONE,
-                      COMPANY_WEBSITE, COMPANY_ADDRESS, SENDER_EMAIL, is_valid_email, logger,
-                      safe_flash_error)
+                      EmailPersonalizationEngine, get_api_key, PIPELINE_STAGES, create_email_log,
+                      get_sender_info, is_valid_email, logger,
+                      safe_flash_error, get_gmail_service_for_user)
 from services.email_service import send_email_via_gmail
 
 compose_bp = Blueprint('compose', __name__)
@@ -16,15 +15,16 @@ compose_bp = Blueprint('compose', __name__)
 @compose_bp.route('/compose')
 @login_required
 def compose_page():
+    sender = get_sender_info()
     try:
         customers = cached_get_customers()
     except Exception as e:
         return render_template('compose.html', active_page='compose', error=str(e),
                                customers=[], selected_id='', pipeline_stages=PIPELINE_STAGES,
                                generated=None, gen_customer_id='', gen_stage='1', attachments_val='',
-                               sender_name=SENDER_NAME, sender_title=SENDER_TITLE,
-                               company_name=COMPANY_NAME, company_phone=COMPANY_PHONE,
-                               company_website=COMPANY_WEBSITE, company_address=COMPANY_ADDRESS)
+                               sender_name=sender['sender_name'], sender_title=sender['sender_title'],
+                               company_name=sender['company_name'], company_phone=sender['company_phone'],
+                               company_website=sender['company_website'], company_address=sender['company_address'])
 
     selected_id = request.args.get('id', '')
     generated = session.pop('generated_email', None)
@@ -46,9 +46,9 @@ def compose_page():
         gen_stage=gen_stage,
         attachments_val=attachments_val,
         today=datetime.now().strftime('%Y-%m-%d'),
-        sender_name=SENDER_NAME, sender_title=SENDER_TITLE,
-        company_name=COMPANY_NAME, company_phone=COMPANY_PHONE,
-        company_website=COMPANY_WEBSITE, company_address=COMPANY_ADDRESS,
+        sender_name=sender['sender_name'], sender_title=sender['sender_title'],
+        company_name=sender['company_name'], company_phone=sender['company_phone'],
+        company_website=sender['company_website'], company_address=sender['company_address'],
     )
 
 
@@ -73,7 +73,7 @@ def generate_email():
             'pain_points': customer.get('pain_points', '')
         }
 
-        engine = EmailPersonalizationEngine(API_KEY)
+        engine = EmailPersonalizationEngine(get_api_key())
         email = engine.generate_email(customer, research, stage, context)
 
         if email:
@@ -145,9 +145,13 @@ def send_now():
             flash(f'{company_name}: invalid email address "{to_email}". Please fix it in Google Sheets (Customers tab, contact_email column).', 'danger')
             return redirect(url_for('compose.compose_page', id=customer_id))
 
+        sender = get_sender_info()
+        gmail_service = get_gmail_service_for_user()
         attachment_files = [a.strip() for a in attachments_str.split(';') if a.strip()] if attachments_str else []
         msg_id, error = send_email_via_gmail(to_email, subject, body, attachment_files,
-                                              sender_name=SENDER_NAME, sender_email=SENDER_EMAIL)
+                                              sender_name=sender['sender_name'],
+                                              sender_email=sender['sender_email'],
+                                              gmail_service=gmail_service)
 
         if error:
             flash(f'Failed to send: {error}', 'danger')

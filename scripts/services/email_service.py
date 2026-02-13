@@ -55,10 +55,30 @@ def _save_credentials(creds):
     os.chmod(json_token_path, 0o600)
 
 
-def get_gmail_service():
-    """Authenticate and return Gmail API service."""
+def get_gmail_service(token_json_str=None):
+    """Authenticate and return Gmail API service.
+
+    Args:
+        token_json_str: Optional JSON string of OAuth token (for multi-user mode).
+                        If None, falls back to file-based credentials.
+    Returns:
+        Gmail service object, or (service, updated_creds) tuple if token was refreshed.
+    """
     from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials as OAuthCredentials
     from googleapiclient.discovery import build
+
+    if token_json_str:
+        token_data = json.loads(token_json_str) if isinstance(token_json_str, str) else token_json_str
+        creds = OAuthCredentials.from_authorized_user_info(token_data)
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+                service = build('gmail', 'v1', credentials=creds)
+                return service, creds
+            else:
+                return None
+        return build('gmail', 'v1', credentials=creds)
 
     creds = _load_credentials()
 
@@ -72,16 +92,16 @@ def get_gmail_service():
 
 
 def send_email_via_gmail(to_email, subject, body, attachment_filenames=None,
-                          sender_name='', sender_email=''):
+                          sender_name='', sender_email='', gmail_service=None):
     """Send email with attachments via Gmail API. Returns (msg_id, error)."""
     if not to_email or not EMAIL_REGEX.match(to_email.strip()):
         return None, f"Invalid email address: '{to_email}'"
 
     to_email = to_email.strip()
 
-    service = get_gmail_service()
+    service = gmail_service or get_gmail_service()
     if not service:
-        return None, "Gmail not authenticated. Run authenticate_gmail.py first."
+        return None, "Gmail not authenticated. Please complete setup."
 
     msg = MIMEMultipart()
     msg['To'] = to_email

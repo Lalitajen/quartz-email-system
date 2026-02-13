@@ -41,3 +41,11 @@ services:
         value: "50"
       - key: FOLLOWUP_DAYS
         value: "3"
+      - key: CREDENTIAL_ENCRYPTION_KEY
+        generateValue: true
+      - key: ADMIN_EMAIL
+        sync: false
+    disk:
+      name: quartz-data
+      mountPath: /app/data
+      sizeGB: 1

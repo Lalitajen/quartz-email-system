@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 from flask import Blueprint, render_template, request, flash, redirect, url_for, session
 from app_core import (login_required, get_sheets, cached_get_customers, invalidate_cache,
-                      PIPELINE_STAGES, API_KEY, logger)
+                      PIPELINE_STAGES, get_api_key, logger)
 
 ai_insights_bp = Blueprint('ai_insights', __name__)
 
@@ -32,7 +32,7 @@ def insights_page():
                  or str(c.get('buying_intent', '')).lower() == 'high']
     hot_leads.sort(key=lambda c: int(c.get('urgency_score', 0) or 0), reverse=True)
 
-    # --- UPSELL READY: customers who can move to next pipeline stage ---
+    # --- UPSELL READY ---
     upsell_ready = []
     max_stage = max(PIPELINE_STAGES.keys()) if PIPELINE_STAGES else 10
     for c in customers:
@@ -53,7 +53,7 @@ def insights_page():
             })
     upsell_ready.sort(key=lambda x: int(x['customer'].get('urgency_score', 0) or 0), reverse=True)
 
-    # --- STALE CUSTOMERS: no contact in 14+ days, not Lost ---
+    # --- STALE CUSTOMERS ---
     stale_customers = []
     today = datetime.now()
     for c in customers:
@@ -104,7 +104,6 @@ def insights_page():
             'reason': f'No contact for {s["days_since_contact"]} days',
         })
 
-    # Discovered prospects from session (Feature 3)
     discovered_prospects = session.get('discovered_prospects', [])
     discover_keyword = session.get('discover_keyword', '')
 
@@ -133,7 +132,7 @@ def discover_prospects():
 
     try:
         import anthropic
-        client = anthropic.Anthropic(api_key=API_KEY)
+        client = anthropic.Anthropic(api_key=get_api_key())
 
         prompt = f"""You are a B2B sales intelligence assistant for a high-purity quartz mining and export company (Lorh La Seng Commercial).
 

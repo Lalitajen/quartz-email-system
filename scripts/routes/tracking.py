@@ -6,9 +6,10 @@ import time
 from datetime import datetime, timedelta
 from flask import Blueprint, render_template, request, redirect, url_for, flash, Response
 from app_core import (login_required, get_sheets, PIPELINE_STAGES, SPAM_DOMAINS,
-                      EmailTracker, EmailPersonalizationEngine, GMAIL_CREDS, API_KEY,
-                      SENDER_NAME, SENDER_EMAIL, FOLLOWUP_DAYS, create_email_log,
-                      classify_reply, logger, safe_flash_error)
+                      EmailTracker, EmailPersonalizationEngine, get_api_key,
+                      get_sender_info, get_user_config, create_email_log,
+                      classify_reply, logger, safe_flash_error,
+                      get_gmail_service_for_user)
 from services.email_service import send_email_via_gmail
 
 tracking_bp = Blueprint('tracking', __name__)
@@ -19,6 +20,7 @@ PER_PAGE = 25
 @tracking_bp.route('/tracking')
 @login_required
 def tracking_page():
+    followup_days = get_user_config('followup_days', 3)
     try:
         sheets = get_sheets()
         sheet_emails = sheets.get_worksheet('Email_Tracking')
@@ -33,7 +35,6 @@ def tracking_page():
     tab = request.args.get('tab', 'all')
     page = request.args.get('page', 1, type=int)
 
-    # Redirect to followup_queue route for the followups tab
     if tab == 'followups':
         return redirect(url_for('tracking.followup_queue'))
 
@@ -53,7 +54,6 @@ def tracking_page():
     n_sent = len([e for e in emails if e.get('status') == 'sent'])
     n_replied = len([e for e in emails if e.get('replied') == 'yes'])
 
-    # Count follow-ups due (for badge)
     now = datetime.now()
     n_followups = 0
     for e in emails:
@@ -67,7 +67,7 @@ def tracking_page():
         except ValueError:
             continue
         current_stage = int(e.get('pipeline_stage', 1)) if str(e.get('pipeline_stage', '1')).isdigit() else 1
-        delay = PIPELINE_STAGES.get(current_stage, {}).get('followup_days', FOLLOWUP_DAYS)
+        delay = PIPELINE_STAGES.get(current_stage, {}).get('followup_days', followup_days)
         if delay > 0 and (now - sent_date).days >= delay:
             n_followups += 1
 
@@ -95,8 +95,10 @@ def tracking_page():
 @login_required
 def check_replies_now():
     try:
-        tracker = EmailTracker(GMAIL_CREDS)
-        tracker.authenticate()
+        gmail_service = get_gmail_service_for_user()
+        tracker = EmailTracker.__new__(EmailTracker)
+        tracker.service = gmail_service
+
         replies = tracker.check_new_replies(since_hours=24)
 
         if not replies:
@@ -185,7 +187,7 @@ def follow_up_send():
         stage_info = PIPELINE_STAGES.get(stage, {})
         attachment_files = stage_info.get('attachments', [])
 
-        engine = EmailPersonalizationEngine(API_KEY)
+        engine = EmailPersonalizationEngine(get_api_key())
         research = {
             'summary': customer.get('research_summary', ''),
             'industry': customer.get('tags', 'Manufacturing'),
@@ -202,8 +204,12 @@ def follow_up_send():
         subject = email_data.get('subject', '')
         body = email_data.get('body', '')
 
+        sender = get_sender_info()
+        gmail_service = get_gmail_service_for_user()
         msg_id, error = send_email_via_gmail(to_email, subject, body, attachment_files,
-                                              sender_name=SENDER_NAME, sender_email=SENDER_EMAIL)
+                                              sender_name=sender['sender_name'],
+                                              sender_email=sender['sender_email'],
+                                              gmail_service=gmail_service)
         if error:
             flash(f'Failed to send: {error}', 'danger')
             return redirect(url_for('tracking.tracking_page'))
@@ -219,7 +225,6 @@ def follow_up_send():
         email_log['reply_content_summary'] = f'Follow-up to {email_id}'
         sheets.log_email(email_log)
 
-        # Update original email status
         tracking_sheet = sheets.get_worksheet('Email_Tracking')
         records = tracking_sheet.get_all_records()
         headers = tracking_sheet.row_values(1)
@@ -246,7 +251,8 @@ def follow_up_send():
 @tracking_bp.route('/tracking/auto_followup')
 @login_required
 def auto_followup():
-    """Find emails sent more than FOLLOWUP_DAYS ago with no reply and send follow-ups."""
+    """Find emails sent more than followup_days ago with no reply and send follow-ups."""
+    followup_days = get_user_config('followup_days', 3)
     try:
         sheets = get_sheets()
         tracking_sheet = sheets.get_worksheet('Email_Tracking')
@@ -256,7 +262,6 @@ def auto_followup():
 
         now = datetime.now()
 
-        # Find stale sent emails using per-stage follow-up delays
         stale = []
         for idx, e in enumerate(emails, start=2):
             sent_date_str = e.get('sent_date', '')
@@ -270,9 +275,9 @@ def auto_followup():
                 continue
 
             current_stage = int(e.get('pipeline_stage', 1)) if str(e.get('pipeline_stage', '1')).isdigit() else 1
-            delay_days = PIPELINE_STAGES.get(current_stage, {}).get('followup_days', FOLLOWUP_DAYS)
+            delay_days = PIPELINE_STAGES.get(current_stage, {}).get('followup_days', followup_days)
             if delay_days == 0:
-                continue  # Never follow up for this stage (e.g. Lost/Inactive)
+                continue
 
             if (now - sent_date).days >= delay_days:
                 stale.append((idx, e))
@@ -281,7 +286,9 @@ def auto_followup():
             flash('No stale emails found (all within their stage delay or already replied).', 'info')
             return redirect(url_for('tracking.tracking_page'))
 
-        engine = EmailPersonalizationEngine(API_KEY)
+        engine = EmailPersonalizationEngine(get_api_key())
+        sender = get_sender_info()
+        gmail_service = get_gmail_service_for_user()
         sent_count = 0
         fail_count = 0
 
@@ -305,7 +312,7 @@ def auto_followup():
                 'industry': customer.get('tags', 'Manufacturing'),
                 'pain_points': customer.get('pain_points', '')
             }
-            delay_days = PIPELINE_STAGES.get(current_stage, {}).get('followup_days', FOLLOWUP_DAYS)
+            delay_days = PIPELINE_STAGES.get(current_stage, {}).get('followup_days', followup_days)
             context = f"This is an automated follow-up. The previous email (Stage {current_stage}) was sent {delay_days}+ days ago with no reply. Now sending Stage {next_stage} ({stage_info.get('name', '')})."
 
             try:
@@ -317,7 +324,9 @@ def auto_followup():
                 subject = email_data.get('subject', '')
                 body = email_data.get('body', '')
                 msg_id, error = send_email_via_gmail(to_email, subject, body, attachment_files,
-                                                      sender_name=SENDER_NAME, sender_email=SENDER_EMAIL)
+                                                      sender_name=sender['sender_name'],
+                                                      sender_email=sender['sender_email'],
+                                                      gmail_service=gmail_service)
                 if error:
                     fail_count += 1
                     continue
@@ -346,7 +355,7 @@ def auto_followup():
                 fail_count += 1
 
         logger.info(f"Auto follow-up: {sent_count} sent, {fail_count} failed out of {len(stale)} stale")
-        flash(f'Auto follow-up complete! Sent: {sent_count}, Failed: {fail_count} (from {len(stale)} stale emails older than {FOLLOWUP_DAYS} days)',
+        flash(f'Auto follow-up complete! Sent: {sent_count}, Failed: {fail_count} (from {len(stale)} stale emails)',
               'success' if fail_count == 0 else 'warning')
 
     except Exception as e:
@@ -378,6 +387,8 @@ def send_scheduled():
             flash('No scheduled emails ready to send.', 'info')
             return redirect(url_for('tracking.tracking_page'))
 
+        sender = get_sender_info()
+        gmail_service = get_gmail_service_for_user()
         sent_count = 0
         fail_count = 0
         for idx, e in scheduled:
@@ -394,7 +405,9 @@ def send_scheduled():
             attachment_files = [a.strip() for a in str(att_str).split(';') if a.strip()] if att_str else []
 
             msg_id, error = send_email_via_gmail(to_email, subject, body, attachment_files,
-                                                  sender_name=SENDER_NAME, sender_email=SENDER_EMAIL)
+                                                  sender_name=sender['sender_name'],
+                                                  sender_email=sender['sender_email'],
+                                                  gmail_service=gmail_service)
             if error:
                 logger.warning(f"Scheduled send failed for {customer.get('company_name', '')}: {error}")
                 fail_count += 1
@@ -421,7 +434,8 @@ def send_scheduled():
 @tracking_bp.route('/tracking/followup_queue')
 @login_required
 def followup_queue():
-    """Show emails due for follow-up based on per-stage delays. Preview before sending."""
+    """Show emails due for follow-up based on per-stage delays."""
+    followup_days = get_user_config('followup_days', 3)
     try:
         sheets = get_sheets()
         tracking_sheet = sheets.get_worksheet('Email_Tracking')
@@ -443,10 +457,10 @@ def followup_queue():
 
             current_stage = int(e.get('pipeline_stage', 1)) if str(e.get('pipeline_stage', '1')).isdigit() else 1
             stage_info = PIPELINE_STAGES.get(current_stage, {})
-            delay_days = stage_info.get('followup_days', FOLLOWUP_DAYS)
+            delay_days = stage_info.get('followup_days', followup_days)
 
             if delay_days == 0:
-                continue  # Stage 10 = never follow up
+                continue
 
             due_date = sent_date + timedelta(days=delay_days)
             days_overdue = (now - due_date).days
@@ -475,7 +489,6 @@ def followup_queue():
                     'due_date': due_date.strftime('%Y-%m-%d'),
                 })
 
-        # Sort by most overdue first
         queue.sort(key=lambda x: x['days_overdue'], reverse=True)
 
         return render_template('tracking.html',
@@ -504,6 +517,7 @@ def snooze_followup():
     snooze_days = int(request.form.get('snooze_days', 3))
     redirect_to = request.form.get('redirect_to', 'followup_queue')
     company_name = request.form.get('company_name', '')
+    followup_days = get_user_config('followup_days', 3)
 
     try:
         sheets = get_sheets()
@@ -520,9 +534,8 @@ def snooze_followup():
                     flash(f'Cannot snooze: invalid sent_date for email {email_id}.', 'danger')
                     break
                 new_date = (old_date + timedelta(days=snooze_days)).strftime('%Y-%m-%d')
-                # Compute new due date for display
                 current_stage = int(record.get('pipeline_stage', 1)) if str(record.get('pipeline_stage', '1')).isdigit() else 1
-                delay = PIPELINE_STAGES.get(current_stage, {}).get('followup_days', FOLLOWUP_DAYS)
+                delay = PIPELINE_STAGES.get(current_stage, {}).get('followup_days', followup_days)
                 new_due = (datetime.strptime(new_date, '%Y-%m-%d') + timedelta(days=delay)).strftime('%Y-%m-%d')
 
                 if 'sent_date' in headers:
@@ -586,6 +599,7 @@ def skip_followup():
 @login_required
 def pipeline_view():
     """Show emails grouped by pipeline stage for easy stage-by-stage follow-up."""
+    followup_days = get_user_config('followup_days', 3)
     try:
         sheets = get_sheets()
         sheet_emails = sheets.get_worksheet('Email_Tracking')
@@ -597,9 +611,8 @@ def pipeline_view():
         return redirect(url_for('tracking.tracking_page'))
 
     now = datetime.now()
-    stage_filter = request.args.get('stage', '')  # optional single-stage filter
+    stage_filter = request.args.get('stage', '')
 
-    # Build per-stage groups
     stage_groups = {}
     for stage_num in sorted(PIPELINE_STAGES.keys()):
         stage_groups[stage_num] = {
@@ -629,7 +642,6 @@ def pipeline_view():
         detected = str(e.get('detected_stage', ''))
         detected_info = PIPELINE_STAGES.get(int(detected), {}) if detected.isdigit() else {}
 
-        # Compute overdue info
         days_since = ''
         is_overdue = False
         sent_date_str = e.get('sent_date', '')
@@ -637,7 +649,7 @@ def pipeline_view():
             try:
                 sent_date = datetime.strptime(sent_date_str, '%Y-%m-%d')
                 days_since = (now - sent_date).days
-                delay = PIPELINE_STAGES.get(stage_num, {}).get('followup_days', FOLLOWUP_DAYS)
+                delay = PIPELINE_STAGES.get(stage_num, {}).get('followup_days', followup_days)
                 if delay > 0 and days_since >= delay and status == 'sent' and replied != 'yes':
                     is_overdue = True
             except ValueError:
@@ -674,7 +686,6 @@ def pipeline_view():
         if status == 'followed_up':
             sg['followed_up'] += 1
 
-    # Sort emails within each stage: needs_action first, then overdue, then by date
     for sg in stage_groups.values():
         sg['emails'].sort(key=lambda x: (
             0 if (x['replied'] == 'yes' and x['status'] == 'replied') else 1,
@@ -682,7 +693,6 @@ def pipeline_view():
             x.get('sent_date', '') or '0000',
         ))
 
-    # Count totals for the nav
     total_count = len(emails)
     n_pending = len([e for e in emails if e.get('reviewed_by') == 'pending_review'])
     n_queued = len([e for e in emails if e.get('status') == 'queued'])
@@ -700,7 +710,7 @@ def pipeline_view():
         except ValueError:
             continue
         current_stage = int(e.get('pipeline_stage', 1)) if str(e.get('pipeline_stage', '1')).isdigit() else 1
-        delay = PIPELINE_STAGES.get(current_stage, {}).get('followup_days', FOLLOWUP_DAYS)
+        delay = PIPELINE_STAGES.get(current_stage, {}).get('followup_days', followup_days)
         if delay > 0 and (now - sent_date).days >= delay:
             n_followups += 1
 

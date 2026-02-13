@@ -1,6 +1,7 @@
 """
 Core application state and shared utilities.
 This module is imported by route blueprints to avoid circular imports.
+Supports multi-user mode: each user has their own credentials and settings.
 """
 
 import os
@@ -14,7 +15,7 @@ import logging
 from functools import wraps
 from datetime import datetime
 
-from flask import session, redirect, url_for
+from flask import session, redirect, url_for, g, flash
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 
@@ -22,7 +23,7 @@ from dotenv import load_dotenv
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(PROJECT_ROOT, 'scripts'))
 
-# Load .env
+# Load .env (for backward compat and initial admin seeding)
 load_dotenv(os.path.join(PROJECT_ROOT, 'config', '.env'))
 
 # Import automation classes
@@ -45,23 +46,10 @@ if os.path.exists(config_path):
 else:
     PIPELINE_STAGES = DEFAULT_PIPELINE_STAGES
 
-# ── Configuration ──────────────────────────────────────
-SHEETS_ID = os.getenv('GOOGLE_SHEETS_ID', '')
-API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
-GMAIL_CREDS = os.getenv('GMAIL_CREDENTIALS_PATH', 'gmail_credentials.json')
-SENDER_NAME = os.getenv('SENDER_NAME', 'Quartz Export')
-SENDER_EMAIL = os.getenv('SENDER_EMAIL', '')
-SENDER_TITLE = os.getenv('SENDER_TITLE', '')
-COMPANY_NAME = os.getenv('COMPANY_NAME', 'Lorh La Seng Commercial')
-COMPANY_PHONE = os.getenv('COMPANY_PHONE', '')
-COMPANY_WEBSITE = os.getenv('COMPANY_WEBSITE', '')
-COMPANY_ADDRESS = os.getenv('COMPANY_ADDRESS', '')
-MAX_EMAILS_PER_DAY = int(os.getenv('MAX_EMAILS_PER_DAY', '50'))
-RESEARCH_DELAY = int(os.getenv('RESEARCH_DELAY_SECONDS', '2'))
-MAX_RESEARCH_PER_RUN = int(os.getenv('MAX_RESEARCH_PER_RUN', '5'))
-FOLLOWUP_DAYS = int(os.getenv('FOLLOWUP_DAYS', '3'))
+# ── Legacy globals (kept for backward compat with CLI scripts) ────
 APP_USERNAME = os.getenv('APP_USERNAME', 'admin')
 APP_PASSWORD = os.getenv('APP_PASSWORD', 'quartz2024')
+GMAIL_CREDS = os.getenv('GMAIL_CREDENTIALS_PATH', 'gmail_credentials.json')
 
 SPAM_DOMAINS = [d.strip().lower() for d in os.getenv('SPAM_DOMAINS',
     '@accounts.google.com,@indeed.com,@pinterest.com,@discover.pinterest.com,@email.shopify.com,@englishgrammar.org,@360alumni.com,@inspire.pinterest.com,mailer-daemon@,noreply@,no-reply@,@shutterstock.com,@coursera.org,@discord.com,@malwarebytes.com,@dropbox.com'
@@ -86,31 +74,130 @@ ENGAGEMENT_COLORS = {
     'UNRESPONSIVE': {'bg': 'dark', 'icon': 'x-circle'},
 }
 
-# ── Sheets service (lazy-init) ─────────────────────────
-_sheets = None
+# ══════════════════════════════════════════════════════════
+# PER-USER CONFIG SYSTEM
+# ══════════════════════════════════════════════════════════
 
+def get_current_user():
+    """Get the current user from session. Returns User or None."""
+    user_id = session.get('user_id')
+    if not user_id:
+        return None
+    # Cache in request context
+    if not hasattr(g, '_current_user') or g._current_user is None:
+        from models import User
+        g._current_user = User.get_by_id(user_id)
+    return g._current_user
+
+
+def get_user_config(key, default=None):
+    """Get a config value for the current user."""
+    user = get_current_user()
+    if not user:
+        return default
+    val = getattr(user, key, default)
+    return val if val is not None else default
+
+
+def get_api_key():
+    """Get the Anthropic API key for the current user."""
+    user = get_current_user()
+    if not user:
+        return os.getenv('ANTHROPIC_API_KEY', '')
+    key = user.get_credential('anthropic_api_key')
+    return key or os.getenv('ANTHROPIC_API_KEY', '')
+
+
+def get_sender_info():
+    """Return dict of sender info for the current user."""
+    user = get_current_user()
+    if not user:
+        return {
+            'sender_name': os.getenv('SENDER_NAME', ''),
+            'sender_email': os.getenv('SENDER_EMAIL', ''),
+            'sender_title': os.getenv('SENDER_TITLE', ''),
+            'company_name': os.getenv('COMPANY_NAME', ''),
+            'company_phone': os.getenv('COMPANY_PHONE', ''),
+            'company_website': os.getenv('COMPANY_WEBSITE', ''),
+            'company_address': os.getenv('COMPANY_ADDRESS', ''),
+        }
+    return {
+        'sender_name': user.sender_name or '',
+        'sender_email': user.sender_email or '',
+        'sender_title': user.sender_title or '',
+        'company_name': user.company_name or '',
+        'company_phone': user.company_phone or '',
+        'company_website': user.company_website or '',
+        'company_address': user.company_address or '',
+    }
+
+
+# ── Per-user Sheets service ──────────────────────────────
 def get_sheets():
-    global _sheets
-    if _sheets is None:
-        _sheets = GoogleSheetsManager(SHEETS_ID)
-        _sheets.authenticate()
-    return _sheets
+    """Get GoogleSheetsManager for the current user."""
+    user = get_current_user()
+    if not user:
+        raise RuntimeError("No authenticated user")
 
-# ── AI Segmentation engine (lazy-init) ────────────────
-_segmentation_engine = None
+    cache_key = f'_sheets_{user.id}'
+    if hasattr(g, cache_key):
+        return getattr(g, cache_key)
+
+    sheets_id = user.google_sheets_id
+    if not sheets_id:
+        raise RuntimeError("Google Sheets not configured. Please complete setup.")
+
+    sa_json = user.get_credential('service_account')
+    if not sa_json:
+        raise RuntimeError("Service account not configured. Please complete setup.")
+
+    mgr = GoogleSheetsManager(sheets_id)
+    mgr.authenticate_from_json(sa_json)
+    setattr(g, cache_key, mgr)
+    return mgr
+
 
 def get_segmentation_engine():
-    global _segmentation_engine
-    if _segmentation_engine is None:
-        _segmentation_engine = CustomerSegmentationEngine(API_KEY)
-    return _segmentation_engine
+    """Get AI segmentation engine for current user."""
+    api_key = get_api_key()
+    if not api_key:
+        raise RuntimeError("Anthropic API key not configured.")
+    return CustomerSegmentationEngine(api_key)
 
-# ── Simple cache ───────────────────────────────────────
+
+def get_gmail_service_for_user():
+    """Get Gmail API service for the current user."""
+    from services.email_service import get_gmail_service
+    user = get_current_user()
+    if not user:
+        raise RuntimeError("No authenticated user")
+    token_json = user.get_credential('gmail_token')
+    if not token_json:
+        raise RuntimeError("Gmail not configured. Please complete setup.")
+    result = get_gmail_service(token_json_str=token_json)
+    if isinstance(result, tuple):
+        service, updated_creds = result
+        if updated_creds and hasattr(updated_creds, 'token') and updated_creds.token:
+            updated_token = json.dumps({
+                'token': updated_creds.token,
+                'refresh_token': updated_creds.refresh_token,
+                'token_uri': updated_creds.token_uri,
+                'client_id': updated_creds.client_id,
+                'client_secret': updated_creds.client_secret,
+                'scopes': list(updated_creds.scopes) if updated_creds.scopes else [],
+            })
+            user.set_credential('gmail_token', updated_token)
+        return service
+    return result
+
+
+# ── Simple cache (per-user) ───────────────────────────
 _cache = {}
 CACHE_TTL = 60
 
 def cached_get_customers():
-    key = 'customers'
+    user_id = session.get('user_id', 'default')
+    key = f'customers_{user_id}'
     if key in _cache and time.time() - _cache[key]['time'] < CACHE_TTL:
         return _cache[key]['data']
     data = get_sheets().get_customers()
@@ -118,23 +205,42 @@ def cached_get_customers():
     return data
 
 def invalidate_cache():
-    _cache.clear()
+    user_id = session.get('user_id', 'default')
+    keys_to_remove = [k for k in _cache if k.endswith(f'_{user_id}')]
+    for k in keys_to_remove:
+        del _cache[k]
 
-# ── Workflow state (thread-safe) ───────────────────────
+# ── Workflow state (per-user, thread-safe) ─────────────
 workflow_lock = threading.Lock()
-workflow_status = {
-    'running': False,
-    'log': [],
-    'completed': False,
-    'error': None
-}
+_workflow_states = {}
 
-# ── Auth decorator ─────────────────────────────────────
+def get_workflow_status():
+    """Get workflow status for current user."""
+    user_id = session.get('user_id', 'default')
+    if user_id not in _workflow_states:
+        _workflow_states[user_id] = {
+            'running': False, 'log': [], 'completed': False, 'error': None
+        }
+    return _workflow_states[user_id]
+
+# Keep backward compat reference
+workflow_status = get_workflow_status
+
+# ── Auth decorators ───────────────────────────────────
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if not session.get('authenticated'):
+        if not session.get('authenticated') or not session.get('user_id'):
             return redirect(url_for('auth.login'))
+        return f(*args, **kwargs)
+    return decorated
+
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get('authenticated') or session.get('user_role') != 'admin':
+            flash('Admin access required.', 'danger')
+            return redirect(url_for('dashboard.dashboard'))
         return f(*args, **kwargs)
     return decorated
 
@@ -193,13 +299,11 @@ def create_email_log(customer_id, customer, subject, body, stage,
         'gmail_msg_id': gmail_msg_id,
     }
 
-# ── Safe error flash (A09 - no internal details to users) ─────
+# ── Safe error flash ──────────────────────────────────
 def safe_flash_error(error, context='Operation'):
     """Log full error internally, show generic message to user."""
-    from flask import flash
     logger.error(f"{context}: {error}", exc_info=True)
     flash(f'{context} failed. Please try again or contact support.', 'danger')
-
 
 # ── Email validation ──────────────────────────────────
 EMAIL_REGEX = re.compile(r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$')
@@ -209,9 +313,7 @@ def is_valid_email(email):
     return bool(email and EMAIL_REGEX.match(email.strip()))
 
 # ── Reply classification ─────────────────────────────
-# Pre-compiled patterns for word-boundary matching (avoids false positives like "cif" in "specifications")
 _REPLY_RULES = [
-    # Check negative/decline FIRST (e.g. "not interested" before "interested")
     ('Declined', 10, ['not interested', 'unsubscribe', 'remove me', 'stop email',
                        'no thank', 'no thanks', 'pass on', r'\bdecline\b']),
     ('Quotation Request', 5, ['price', 'quote', 'quotation', r'\bcost\b', r'\bfob\b',
@@ -226,10 +328,7 @@ _REPLY_RULES = [
 ]
 
 def classify_reply(reply_body):
-    """Classify a customer reply by type and detect pipeline stage.
-    Returns (request_type, detected_stage) tuple.
-    Uses word-boundary regex for short keywords to avoid false positives.
-    """
+    """Classify a customer reply by type and detect pipeline stage."""
     text = reply_body.lower()
     for label, stage, patterns in _REPLY_RULES:
         for p in patterns:
@@ -240,7 +339,6 @@ def classify_reply(reply_body):
                 if p in text:
                     return label, stage
     return 'General Reply', None
-
 
 # ── Settings validators ───────────────────────────────
 SETTINGS_VALIDATORS = {
@@ -253,16 +351,21 @@ SETTINGS_VALIDATORS = {
     'SENDER_EMAIL': lambda v: '@' in v and '.' in v.split('@')[1] if v else True,
 }
 
+# Legacy compat
+SENDER_NAME = os.getenv('SENDER_NAME', 'Quartz Export')
+SENDER_EMAIL = os.getenv('SENDER_EMAIL', '')
+SENDER_TITLE = os.getenv('SENDER_TITLE', '')
+COMPANY_NAME = os.getenv('COMPANY_NAME', 'Lorh La Seng Commercial')
+COMPANY_PHONE = os.getenv('COMPANY_PHONE', '')
+COMPANY_WEBSITE = os.getenv('COMPANY_WEBSITE', '')
+COMPANY_ADDRESS = os.getenv('COMPANY_ADDRESS', '')
+SHEETS_ID = os.getenv('GOOGLE_SHEETS_ID', '')
+API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
+MAX_EMAILS_PER_DAY = int(os.getenv('MAX_EMAILS_PER_DAY', '50'))
+RESEARCH_DELAY = int(os.getenv('RESEARCH_DELAY_SECONDS', '2'))
+MAX_RESEARCH_PER_RUN = int(os.getenv('MAX_RESEARCH_PER_RUN', '5'))
+FOLLOWUP_DAYS = int(os.getenv('FOLLOWUP_DAYS', '3'))
+
 def reload_config():
-    """Reload configuration from .env file."""
-    global SENDER_NAME, SENDER_EMAIL, SENDER_TITLE, COMPANY_NAME, COMPANY_PHONE, COMPANY_WEBSITE, COMPANY_ADDRESS, FOLLOWUP_DAYS
-    env_path = os.path.join(PROJECT_ROOT, 'config', '.env')
-    load_dotenv(env_path, override=True)
-    SENDER_NAME = os.getenv('SENDER_NAME', 'Quartz Export')
-    SENDER_EMAIL = os.getenv('SENDER_EMAIL', '')
-    SENDER_TITLE = os.getenv('SENDER_TITLE', '')
-    COMPANY_NAME = os.getenv('COMPANY_NAME', 'Lorh La Seng Commercial')
-    COMPANY_PHONE = os.getenv('COMPANY_PHONE', '')
-    COMPANY_WEBSITE = os.getenv('COMPANY_WEBSITE', '')
-    COMPANY_ADDRESS = os.getenv('COMPANY_ADDRESS', '')
-    FOLLOWUP_DAYS = int(os.getenv('FOLLOWUP_DAYS', '3'))
+    """No-op in multi-user mode. Settings are per-user in SQLite."""
+    pass
