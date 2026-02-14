@@ -5,6 +5,11 @@ token.json
 token.pickle
 gmail_credentials.json
 service_account.json
+*_b64.txt
+gmail_creds_b64.txt
+service_account_b64.txt
+token_b64.txt
+data/
 
 # Python
 __pycache__/
