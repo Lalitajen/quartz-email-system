@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}User: {{ user.email }}{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+    <a href="/admin" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i>Back to Admin Panel
+    </a>
+</div>
+
+<div class="page-header">
+    <h2><i class="bi bi-person-circle me-2"></i>{{ user.display_name|e }}</h2>
+    <p class="text-muted">{{ user.email|e }}</p>
+</div>
+
+<!-- User Info Card -->
+<div class="card p-4 mb-4">
+    <h5 class="mb-3"><i class="bi bi-info-circle me-2"></i>User Information</h5>
+
+    <form method="POST" action="/admin/users/{{ user.id }}/edit">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div class="row g-3 mb-3">
+            <div class="col-md-4">
+                <label class="form-label fw-bold">User ID</label>
+                <input type="text" class="form-control" value="{{ user.id }}" disabled>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label fw-bold">Email</label>
+                <input type="text" class="form-control" value="{{ user.email }}" disabled>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label fw-bold">Display Name</label>
+                <input type="text" name="display_name" class="form-control" value="{{ user.display_name|e }}" required>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-3">
+            <div class="col-md-3">
+                <label class="form-label fw-bold">Role</label>
+                <select name="role" class="form-select" required>
+                    <option value="user" {% if user.role == 'user' %}selected{% endif %}>User</option>
+                    <option value="admin" {% if user.role == 'admin' %}selected{% endif %}>Admin</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-bold">Setup Status</label>
+                <div class="form-control-plaintext">
+                    {% if user.setup_complete %}
+                        <span class="badge bg-success">
+                            <i class="bi bi-check-circle me-1"></i>Complete
+                        </span>
+                    {% else %}
+                        <span class="badge bg-warning">
+                            <i class="bi bi-hourglass-split me-1"></i>Pending
+                        </span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-bold">Email Verified</label>
+                <div class="form-control-plaintext">
+                    {% if user.email_verified %}
+                        <span class="badge bg-success">
+                            <i class="bi bi-check-circle me-1"></i>Verified
+                        </span>
+                    {% else %}
+                        <span class="badge bg-danger">
+                            <i class="bi bi-x-circle me-1"></i>Not Verified
+                        </span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-bold">Joined</label>
+                <div class="form-control-plaintext">
+                    <small class="text-muted">{{ user.created_at[:10] }}</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-save me-1"></i>Save Changes
+            </button>
+        </div>
+    </form>
+</div>
+
+<!-- Credentials Card -->
+<div class="card p-4 mb-4">
+    <h5 class="mb-3"><i class="bi bi-key me-2"></i>Credentials Status</h5>
+
+    <div class="row g-3">
+        <div class="col-md-6">
+            <div class="d-flex align-items-center">
+                {% if credentials.anthropic_api_key %}
+                    <span class="badge bg-success me-2"><i class="bi bi-check-circle"></i></span>
+                    <span>Anthropic API Key</span>
+                {% else %}
+                    <span class="badge bg-danger me-2"><i class="bi bi-x-circle"></i></span>
+                    <span class="text-muted">Anthropic API Key (Not Set)</span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="d-flex align-items-center">
+                {% if credentials.service_account %}
+                    <span class="badge bg-success me-2"><i class="bi bi-check-circle"></i></span>
+                    <span>Google Service Account</span>
+                {% else %}
+                    <span class="badge bg-danger me-2"><i class="bi bi-x-circle"></i></span>
+                    <span class="text-muted">Google Service Account (Not Set)</span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="d-flex align-items-center">
+                {% if credentials.gmail_token %}
+                    <span class="badge bg-success me-2"><i class="bi bi-check-circle"></i></span>
+                    <span>Gmail OAuth Token</span>
+                {% else %}
+                    <span class="badge bg-danger me-2"><i class="bi bi-x-circle"></i></span>
+                    <span class="text-muted">Gmail OAuth Token (Not Set)</span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="d-flex align-items-center">
+                {% if settings.google_sheets_id %}
+                    <span class="badge bg-success me-2"><i class="bi bi-check-circle"></i></span>
+                    <span>Google Sheets ID</span>
+                {% else %}
+                    <span class="badge bg-danger me-2"><i class="bi bi-x-circle"></i></span>
+                    <span class="text-muted">Google Sheets ID (Not Set)</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Settings Card -->
+<div class="card p-4 mb-4">
+    <h5 class="mb-3"><i class="bi bi-gear me-2"></i>User Settings</h5>
+
+    <div class="row g-3">
+        <div class="col-md-6">
+            <p class="mb-1"><strong>Sender Name:</strong> {{ settings.sender_name or '-' }}</p>
+            <p class="mb-1"><strong>Sender Email:</strong> {{ settings.sender_email or '-' }}</p>
+            <p class="mb-1"><strong>Sender Title:</strong> {{ settings.sender_title or '-' }}</p>
+        </div>
+        <div class="col-md-6">
+            <p class="mb-1"><strong>Company Name:</strong> {{ settings.company_name or '-' }}</p>
+            <p class="mb-1"><strong>Company Phone:</strong> {{ settings.company_phone or '-' }}</p>
+            <p class="mb-1"><strong>Company Website:</strong> {{ settings.company_website or '-' }}</p>
+        </div>
+    </div>
+
+    <hr class="my-3">
+
+    <div class="row g-3">
+        <div class="col-md-3">
+            <p class="mb-1"><strong>Max Emails/Day:</strong> {{ settings.max_emails_per_day }}</p>
+        </div>
+        <div class="col-md-3">
+            <p class="mb-1"><strong>Research Delay:</strong> {{ settings.research_delay_seconds }}s</p>
+        </div>
+        <div class="col-md-3">
+            <p class="mb-1"><strong>Followup Days:</strong> {{ settings.followup_days }}</p>
+        </div>
+        <div class="col-md-3">
+            <p class="mb-1"><strong>Auto-Reply Confidence:</strong> {{ settings.auto_reply_confidence }}</p>
+        </div>
+    </div>
+</div>
+
+<!-- Danger Zone -->
+<div class="card border-danger p-4">
+    <h5 class="mb-3 text-danger"><i class="bi bi-exclamation-triangle me-2"></i>Danger Zone</h5>
+
+    <div class="d-flex gap-2 flex-wrap">
+        <!-- Reset Setup -->
+        <form method="POST" action="/admin/users/{{ user.id }}/reset-setup" class="d-inline"
+              onsubmit="return confirm('Reset setup for {{ user.email }}? They will see the onboarding wizard on next login.')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-warning">
+                <i class="bi bi-arrow-counterclockwise me-1"></i>Reset Setup
+            </button>
+        </form>
+
+        <!-- Delete User -->
+        <form method="POST" action="/admin/users/{{ user.id }}/delete" class="d-inline"
+              onsubmit="return confirm('⚠️ PERMANENTLY DELETE {{ user.email }}? This action CANNOT be undone! All data will be lost.')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-danger">
+                <i class="bi bi-trash me-1"></i>Delete User
+            </button>
+        </form>
+    </div>
+
+    <div class="alert alert-warning mt-3 mb-0">
+        <small>
+            <i class="bi bi-info-circle me-1"></i>
+            <strong>Note:</strong> Deleting a user is permanent and will remove all their data, credentials, and settings. Reset setup to allow them to reconfigure.
+        </small>
+    </div>
+</div>
+
+{% endblock %}
