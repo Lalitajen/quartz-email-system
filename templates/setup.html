@@ -1,0 +1,286 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="container py-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <!-- Progress Indicator -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="mb-3">Setup Progress</h5>
+                    <div class="progress" style="height: 25px;">
+                        <div class="progress-bar bg-primary" role="progressbar"
+                             style="width: {{ (step/5)*100 }}%"
+                             aria-valuenow="{{ (step/5)*100 }}" aria-valuemin="0" aria-valuemax="100">
+                            Step {{ step }} of 5 ({{ ((step/5)*100)|round|int }}%)
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step Content Card -->
+            <div class="card p-4 shadow-sm">
+
+                {% if step == 1 %}
+                    <!-- Welcome Step -->
+                    <div class="text-center mb-4">
+                        <i class="bi bi-hand-wave" style="font-size: 4rem; color: #667eea;"></i>
+                    </div>
+                    <h2 class="text-center mb-3">Welcome to Quartz!</h2>
+                    <p class="lead text-center text-muted">Let's set up your email outreach system in 5 easy steps.</p>
+
+                    <div class="row g-3 my-4">
+                        <div class="col-md-6">
+                            <div class="card bg-light border-0">
+                                <div class="card-body">
+                                    <i class="bi bi-robot text-primary" style="font-size: 2rem;"></i>
+                                    <h6 class="mt-2">AI-Powered</h6>
+                                    <p class="small text-muted mb-0">Claude AI generates personalized emails</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card bg-light border-0">
+                                <div class="card-body">
+                                    <i class="bi bi-envelope-check text-success" style="font-size: 2rem;"></i>
+                                    <h6 class="mt-2">Gmail Integration</h6>
+                                    <p class="small text-muted mb-0">Send directly from your Gmail account</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card bg-light border-0">
+                                <div class="card-body">
+                                    <i class="bi bi-table text-info" style="font-size: 2rem;"></i>
+                                    <h6 class="mt-2">Google Sheets Database</h6>
+                                    <p class="small text-muted mb-0">Manage customers in familiar spreadsheets</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card bg-light border-0">
+                                <div class="card-body">
+                                    <i class="bi bi-graph-up text-warning" style="font-size: 2rem;"></i>
+                                    <h6 class="mt-2">Track & Optimize</h6>
+                                    <p class="small text-muted mb-0">Analytics and auto-follow-ups</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <form method="POST" action="/setup/save/1" class="text-center">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-primary btn-lg px-5">
+                            <i class="bi bi-arrow-right me-2"></i>Get Started
+                        </button>
+                    </form>
+
+                {% elif step == 2 %}
+                    <!-- Anthropic API Key -->
+                    <h3><i class="bi bi-robot me-2"></i>AI Configuration</h3>
+                    <p class="text-muted">Enter your Anthropic API key for AI-powered email generation.</p>
+
+                    <form method="POST" action="/setup/save/2">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">Anthropic API Key</label>
+                            <input type="text" name="anthropic_api_key"
+                                   class="form-control font-monospace"
+                                   placeholder="sk-ant-api03-..." required
+                                   style="font-size: 0.9rem;">
+                            <small class="text-muted d-block mt-2">
+                                <i class="bi bi-info-circle me-1"></i>
+                                Don't have an API key?
+                                <a href="https://console.anthropic.com/settings/keys" target="_blank" class="text-decoration-none">
+                                    Get one from Anthropic Console <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </small>
+                        </div>
+
+                        <div class="alert alert-info">
+                            <i class="bi bi-lightbulb me-2"></i>
+                            <strong>Tip:</strong> The API key will be encrypted and stored securely in your user profile.
+                        </div>
+
+                        <div class="btn-group w-100">
+                            <a href="/setup/step/1" class="btn btn-outline-secondary">
+                                <i class="bi bi-arrow-left me-1"></i>Back
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                Next <i class="bi bi-arrow-right ms-1"></i>
+                            </button>
+                        </div>
+                    </form>
+
+                {% elif step == 3 %}
+                    <!-- Google Sheets Service Account -->
+                    <h3><i class="bi bi-table me-2"></i>Google Sheets Setup</h3>
+                    <p class="text-muted">Configure your Google Sheets integration for customer data storage.</p>
+
+                    <form method="POST" action="/setup/save/3">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Service Account JSON</label>
+                            <textarea name="service_account_json" class="form-control font-monospace"
+                                      rows="8" required
+                                      placeholder='{"type": "service_account", "project_id": "...", ...}'
+                                      style="font-size: 0.85rem;"></textarea>
+                            <small class="text-muted d-block mt-2">
+                                <i class="bi bi-info-circle me-1"></i>
+                                Paste the entire contents of your <code>service_account.json</code> file.
+                                <a href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank" class="text-decoration-none">
+                                    Create one here <i class="bi bi-box-arrow-up-right"></i>
+                                </a>
+                            </small>
+                        </div>
+
+                        <div class="alert alert-success">
+                            <i class="bi bi-magic me-2"></i>
+                            <strong>Auto-Create Google Sheet:</strong> Leave the field below empty, and we'll automatically create a new Google Sheet with all the right columns for you!
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">Google Sheets ID (Optional)</label>
+                            <input type="text" name="google_sheets_id" class="form-control font-monospace"
+                                   placeholder="Leave empty to auto-create, or paste your sheet ID here"
+                                   style="font-size: 0.9rem;">
+                            <small class="text-muted d-block mt-2">
+                                <i class="bi bi-info-circle me-1"></i>
+                                The Sheet ID is the long string in your Google Sheets URL between <code>/d/</code> and <code>/edit</code>
+                            </small>
+                        </div>
+
+                        <div class="btn-group w-100">
+                            <a href="/setup/step/2" class="btn btn-outline-secondary">
+                                <i class="bi bi-arrow-left me-1"></i>Back
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                Next <i class="bi bi-arrow-right ms-1"></i>
+                            </button>
+                        </div>
+                    </form>
+
+                {% elif step == 4 %}
+                    <!-- Gmail OAuth -->
+                    <h3><i class="bi bi-envelope me-2"></i>Gmail Authorization</h3>
+                    <p class="text-muted">Connect your Gmail account to send emails directly.</p>
+
+                    {% if credentials.gmail_token %}
+                        <div class="alert alert-success">
+                            <i class="bi bi-check-circle me-2"></i>
+                            <strong>Gmail Already Authorized!</strong> You can re-authorize if needed or proceed to the next step.
+                        </div>
+                    {% endif %}
+
+                    <div class="card bg-light border-0 p-4 mb-4">
+                        <h6 class="mb-3">What happens when you click "Authorize Gmail"?</h6>
+                        <ol class="mb-0">
+                            <li>You'll be redirected to Google's secure authorization page</li>
+                            <li>Select the Gmail account you want to use</li>
+                            <li>Grant "Send email" and "Read email" permissions</li>
+                            <li>You'll be automatically redirected back here</li>
+                        </ol>
+                    </div>
+
+                    <div class="text-center mb-4">
+                        <a href="/oauth/authorize" class="btn btn-primary btn-lg px-5">
+                            <i class="bi bi-google me-2"></i>Authorize Gmail
+                        </a>
+                    </div>
+
+                    <div class="alert alert-info">
+                        <i class="bi bi-shield-check me-2"></i>
+                        <strong>Your data is secure:</strong> We only request the minimum permissions needed. Your Gmail password is never shared with us.
+                    </div>
+
+                    <hr class="my-4">
+
+                    <div class="btn-group w-100">
+                        <a href="/setup/step/3" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left me-1"></i>Back
+                        </a>
+                        {% if credentials.gmail_token %}
+                            <a href="/setup/step/5" class="btn btn-primary">
+                                Next <i class="bi bi-arrow-right ms-1"></i>
+                            </a>
+                        {% else %}
+                            <button class="btn btn-secondary" disabled title="Authorize Gmail to continue">
+                                <i class="bi bi-lock me-1"></i>Authorize Gmail to Continue
+                            </button>
+                        {% endif %}
+                    </div>
+
+                {% elif step == 5 %}
+                    <!-- Sender Profile -->
+                    <h3><i class="bi bi-person-badge me-2"></i>Your Profile</h3>
+                    <p class="text-muted">Tell us about yourself and your company. This info will be used in your email signatures.</p>
+
+                    <form method="POST" action="/setup/save/5">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                        <h5 class="mt-4 mb-3 text-primary"><i class="bi bi-person-circle me-2"></i>Sender Information</h5>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Your Name</label>
+                                <input type="text" name="sender_name" class="form-control"
+                                       value="{{ user.display_name }}" required
+                                       placeholder="John Doe">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Your Email</label>
+                                <input type="email" name="sender_email" class="form-control"
+                                       value="{{ user.email }}" required>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Your Title</label>
+                                <input type="text" name="sender_title" class="form-control"
+                                       placeholder="Business Development Manager" required>
+                            </div>
+                        </div>
+
+                        <h5 class="mt-5 mb-3 text-primary"><i class="bi bi-building me-2"></i>Company Details</h5>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Company Name</label>
+                                <input type="text" name="company_name" class="form-control"
+                                       placeholder="Acme Corporation" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Phone Number</label>
+                                <input type="tel" name="company_phone" class="form-control"
+                                       placeholder="+1 (555) 123-4567">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Website</label>
+                                <input type="url" name="company_website" class="form-control"
+                                       placeholder="https://example.com">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Address</label>
+                                <input type="text" name="company_address" class="form-control"
+                                       placeholder="123 Main St, City, State 12345">
+                            </div>
+                        </div>
+
+                        <hr class="my-4">
+
+                        <div class="btn-group w-100">
+                            <a href="/setup/step/4" class="btn btn-outline-secondary">
+                                <i class="bi bi-arrow-left me-1"></i>Back
+                            </a>
+                            <button type="submit" class="btn btn-success btn-lg">
+                                <i class="bi bi-check-lg me-2"></i>Complete Setup
+                            </button>
+                        </div>
+                    </form>
+
+                {% endif %}
+
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

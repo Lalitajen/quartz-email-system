@@ -31,8 +31,9 @@
             <form method="POST" action="/login">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="mb-3">
-                    <label class="form-label">Username</label>
-                    <input type="text" class="form-control" name="username" required autofocus>
+                    <label class="form-label">Email Address</label>
+                    <input type="email" class="form-control" name="email" required autofocus
+                           placeholder="your@email.com">
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Password</label>
@@ -42,6 +43,12 @@
                     <i class="bi bi-box-arrow-in-right me-1"></i>Sign In
                 </button>
             </form>
+
+            <hr class="my-3">
+            <p class="text-center mb-0">
+                Don't have an account?
+                <a href="/register" class="text-decoration-none">Sign Up</a>
+            </p>
         </div>
     </div>
 </body>

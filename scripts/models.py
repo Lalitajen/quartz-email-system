@@ -93,6 +93,10 @@ def init_db(app=None):
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 last_login TEXT,
 
+                email_verified INTEGER NOT NULL DEFAULT 0,
+                verification_token TEXT DEFAULT NULL,
+                verification_token_expires TEXT DEFAULT NULL,
+
                 google_sheets_id TEXT DEFAULT '',
                 service_account_enc BLOB DEFAULT NULL,
                 gmail_token_enc BLOB DEFAULT NULL,
@@ -263,7 +267,8 @@ class User:
             'company_name', 'company_phone', 'company_website', 'company_address',
             'max_emails_per_day', 'research_delay_seconds', 'max_research_per_run',
             'followup_days', 'auto_reply_confidence', 'setup_complete',
-            'display_name', 'is_active', 'role',
+            'display_name', 'is_active', 'role', 'email_verified',
+            'verification_token', 'verification_token_expires',
         }
         if field not in allowed:
             raise ValueError(f"Cannot update field: {field}")
@@ -355,3 +360,70 @@ class User:
         with get_db() as db:
             db.execute("UPDATE users SET password_hash = ? WHERE id = ?",
                        (generate_password_hash(new_password), self.id))
+
+    def set_setting(self, key, value):
+        """Alias for update_field for backward compatibility."""
+        return self.update_field(key, value)
+
+    def get_all_settings(self):
+        """Return all non-encrypted user settings as dict."""
+        return {
+            'google_sheets_id': self.google_sheets_id,
+            'sender_name': self.sender_name,
+            'sender_email': self.sender_email,
+            'sender_title': self.sender_title,
+            'company_name': self.company_name,
+            'company_phone': self.company_phone,
+            'company_website': self.company_website,
+            'company_address': self.company_address,
+            'max_emails_per_day': self.max_emails_per_day,
+            'research_delay_seconds': self.research_delay_seconds,
+            'max_research_per_run': self.max_research_per_run,
+            'followup_days': self.followup_days,
+            'auto_reply_confidence': self.auto_reply_confidence,
+            'setup_complete': self.setup_complete,
+        }
+
+    def generate_verification_token(self):
+        """Generate and store email verification token (24hr expiry)."""
+        import secrets
+        from datetime import timedelta
+        token = secrets.token_urlsafe(32)
+        expires = datetime.now() + timedelta(hours=24)
+        expires_str = expires.strftime('%Y-%m-%d %H:%M:%S')
+        with get_db() as db:
+            db.execute(
+                "UPDATE users SET verification_token = ?, verification_token_expires = ? WHERE id = ?",
+                (token, expires_str, self.id)
+            )
+        self.verification_token = token
+        self.verification_token_expires = expires_str
+        return token
+
+    def verify_email_token(self, token):
+        """Verify token and mark email as verified. Returns True if successful."""
+        if not self.verification_token or self.verification_token != token:
+            return False
+
+        # Check if token has expired
+        if self.verification_token_expires:
+            try:
+                expires = datetime.strptime(self.verification_token_expires, '%Y-%m-%d %H:%M:%S')
+                if datetime.now() > expires:
+                    logger.warning(f"Verification token expired for user {self.email}")
+                    return False
+            except ValueError:
+                logger.error(f"Invalid expiry format for user {self.email}")
+                return False
+
+        # Mark email as verified and clear token
+        with get_db() as db:
+            db.execute(
+                "UPDATE users SET email_verified = 1, verification_token = NULL, verification_token_expires = NULL WHERE id = ?",
+                (self.id,)
+            )
+        self.email_verified = 1
+        self.verification_token = None
+        self.verification_token_expires = None
+        logger.info(f"Email verified for user {self.email}")
+        return True

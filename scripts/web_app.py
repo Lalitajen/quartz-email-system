@@ -69,6 +69,11 @@ def create_app():
     # ── Rate Limiting (A04) ───────────────────────────────
     limiter.init_app(app)
 
+    # ── Initialize Database ───────────────────────────────
+    from models import init_db
+    init_db(app)
+    logger.info("Database initialized")
+
     # Register Jinja2 global functions
     app.jinja_env.globals['engagement_badge'] = engagement_badge
     app.jinja_env.globals['stage_badge'] = stage_badge

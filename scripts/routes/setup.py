@@ -82,8 +82,8 @@ def save_step(step):
             service_account_json = request.form.get('service_account_json', '').strip()
             google_sheets_id = request.form.get('google_sheets_id', '').strip()
 
-            if not service_account_json or not google_sheets_id:
-                flash('Please provide both the service account JSON and Google Sheets ID.', 'danger')
+            if not service_account_json:
+                flash('Please provide the service account JSON.', 'danger')
                 return redirect(url_for('setup.setup_step', step=3))
 
             # Validate JSON
@@ -96,32 +96,30 @@ def save_step(step):
                 flash('Invalid JSON format. Please paste the entire contents of your service_account.json file.', 'danger')
                 return redirect(url_for('setup.setup_step', step=3))
 
+            # Save service account
             user.set_credential('service_account', service_account_json)
-            user.set_credential('google_sheets_id', google_sheets_id)
-            flash('Google Sheets credentials saved!', 'success')
+
+            # Auto-create Google Sheet if ID not provided
+            if not google_sheets_id:
+                try:
+                    from app_core import create_user_sheet_template
+                    google_sheets_id = create_user_sheet_template(user)
+                    flash('Google Sheet created automatically with all required columns!', 'success')
+                except Exception as e:
+                    logger.error(f"Failed to auto-create sheet for {user.email}: {e}")
+                    flash('Could not auto-create sheet. Please provide a Google Sheets ID or try again.', 'danger')
+                    return redirect(url_for('setup.setup_step', step=3))
+
+            user.set_setting('google_sheets_id', google_sheets_id)
+            flash('Google Sheets configured successfully!', 'success')
             return redirect(url_for('setup.setup_step', step=4))
 
         elif step == 4:
-            # Gmail OAuth Token
-            gmail_token_json = request.form.get('gmail_token_json', '').strip()
-
-            if not gmail_token_json:
-                flash('Please provide your Gmail OAuth token JSON.', 'danger')
-                return redirect(url_for('setup.setup_step', step=4))
-
-            # Validate JSON
-            try:
-                token_data = json.loads(gmail_token_json)
-                if 'token' not in token_data and 'refresh_token' not in token_data:
-                    flash('Invalid token JSON. It should contain "token" or "refresh_token" field.', 'danger')
-                    return redirect(url_for('setup.setup_step', step=4))
-            except json.JSONDecodeError:
-                flash('Invalid JSON format. Please paste the entire contents of your token.json file.', 'danger')
-                return redirect(url_for('setup.setup_step', step=4))
-
-            user.set_credential('gmail_token', gmail_token_json)
-            flash('Gmail token saved!', 'success')
-            return redirect(url_for('setup.setup_step', step=5))
+            # Gmail OAuth - handled by /oauth/authorize route
+            # This step is informational/button-based, no form submission needed
+            # Users click "Authorize Gmail" button which redirects to OAuth flow
+            flash('Click "Authorize Gmail" to connect your account.', 'info')
+            return redirect(url_for('setup.setup_step', step=4))
 
         elif step == 5:
             # Sender Information & Company Details

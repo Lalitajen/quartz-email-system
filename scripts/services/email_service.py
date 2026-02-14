@@ -148,3 +148,41 @@ def send_email_via_gmail(to_email, subject, body, attachment_filenames=None,
 
     logger.error(f"Failed to send email to {to_email}: {last_error}")
     return None, str(last_error)
+
+
+def send_verification_email(to_email, display_name, verification_url):
+    """Send email verification link to new user."""
+    # Use admin/system Gmail for sending verification emails
+    # (Users can't send from their own Gmail until they verify)
+    service = get_gmail_service()  # Uses default token
+
+    if not service:
+        raise Exception("Gmail service not configured. Cannot send verification email.")
+
+    message = MIMEText(f"""Hi {display_name},
+
+Welcome to Quartz Email Outreach System!
+
+Please verify your email address by clicking the link below:
+
+{verification_url}
+
+This link will expire in 24 hours.
+
+If you didn't create this account, please ignore this email.
+
+Best regards,
+Quartz Team
+""")
+
+    message['to'] = to_email
+    message['subject'] = 'Verify your Quartz account'
+    message['from'] = os.getenv('SENDER_EMAIL', 'noreply@quartz.app')
+
+    raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
+    service.users().messages().send(
+        userId='me',
+        body={'raw': raw}
+    ).execute()
+
+    logger.info(f"Verification email sent to {to_email}")

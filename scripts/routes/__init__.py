@@ -1,6 +1,7 @@
 """Route blueprints for the Quartz Email System."""
 
 from .auth import auth_bp
+from .oauth import oauth_bp
 from .dashboard import dashboard_bp
 from .customers import customers_bp
 from .research import research_bp
@@ -17,6 +18,7 @@ from .admin import admin_bp
 
 ALL_BLUEPRINTS = [
     auth_bp,
+    oauth_bp,
     dashboard_bp,
     customers_bp,
     research_bp,
