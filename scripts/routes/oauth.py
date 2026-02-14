@@ -7,6 +7,10 @@ from flask import Blueprint, request, redirect, url_for, flash, session
 from google_auth_oauthlib.flow import Flow
 from app_core import login_required, get_current_user, logger, PROJECT_ROOT
 
+# Allow HTTP for local development (required for OAuth on localhost)
+if os.getenv('FLASK_ENV', 'development') != 'production':
+    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
 oauth_bp = Blueprint('oauth', __name__)
 
 # OAuth scopes
