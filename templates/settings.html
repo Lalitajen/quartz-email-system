@@ -4,113 +4,449 @@
 {% block content %}
 <div class="page-header">
     <h2><i class="bi bi-gear me-2"></i>Settings</h2>
+    <p class="text-muted">Manage your account settings, credentials, and preferences</p>
 </div>
 
-<div class="row">
-    <div class="col-md-6">
+<!-- Navigation Tabs -->
+<ul class="nav nav-tabs mb-4" id="settingsTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="credentials-tab" data-bs-toggle="tab" data-bs-target="#credentials" type="button">
+            <i class="bi bi-key me-1"></i>API & Credentials
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="email-tab" data-bs-toggle="tab" data-bs-target="#email" type="button">
+            <i class="bi bi-envelope me-1"></i>Email Settings
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="automation-tab" data-bs-toggle="tab" data-bs-target="#automation" type="button">
+            <i class="bi bi-robot me-1"></i>Automation
+        </button>
+    </li>
+</ul>
+
+<div class="tab-content" id="settingsTabContent">
+
+    <!-- ========== API & CREDENTIALS TAB ========== -->
+    <div class="tab-pane fade show active" id="credentials" role="tabpanel">
+
+        <!-- Credentials Status Overview -->
+        <div class="card p-4 mb-4 border-primary">
+            <h5><i class="bi bi-shield-check me-2 text-primary"></i>Credentials Status</h5>
+            <hr>
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <div class="text-center p-3 border rounded">
+                        {% if credentials_status.anthropic_api_key %}
+                            <i class="bi bi-check-circle-fill text-success" style="font-size: 2rem;"></i>
+                            <p class="mb-0 mt-2"><small><strong>Anthropic API</strong></small></p>
+                            <small class="text-success">Connected</small>
+                        {% else %}
+                            <i class="bi bi-x-circle-fill text-danger" style="font-size: 2rem;"></i>
+                            <p class="mb-0 mt-2"><small><strong>Anthropic API</strong></small></p>
+                            <small class="text-danger">Not Set</small>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-center p-3 border rounded">
+                        {% if credentials_status.service_account %}
+                            <i class="bi bi-check-circle-fill text-success" style="font-size: 2rem;"></i>
+                            <p class="mb-0 mt-2"><small><strong>Service Account</strong></small></p>
+                            <small class="text-success">Connected</small>
+                        {% else %}
+                            <i class="bi bi-x-circle-fill text-danger" style="font-size: 2rem;"></i>
+                            <p class="mb-0 mt-2"><small><strong>Service Account</strong></small></p>
+                            <small class="text-danger">Not Set</small>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-center p-3 border rounded">
+                        {% if credentials_status.google_sheets_id %}
+                            <i class="bi bi-check-circle-fill text-success" style="font-size: 2rem;"></i>
+                            <p class="mb-0 mt-2"><small><strong>Google Sheets</strong></small></p>
+                            <small class="text-success">Configured</small>
+                        {% else %}
+                            <i class="bi bi-x-circle-fill text-danger" style="font-size: 2rem;"></i>
+                            <p class="mb-0 mt-2"><small><strong>Google Sheets</strong></small></p>
+                            <small class="text-danger">Not Set</small>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-center p-3 border rounded">
+                        {% if credentials_status.gmail_token %}
+                            <i class="bi bi-check-circle-fill text-success" style="font-size: 2rem;"></i>
+                            <p class="mb-0 mt-2"><small><strong>Gmail OAuth</strong></small></p>
+                            <small class="text-success">Authorized</small>
+                        {% else %}
+                            <i class="bi bi-x-circle-fill text-danger" style="font-size: 2rem;"></i>
+                            <p class="mb-0 mt-2"><small><strong>Gmail OAuth</strong></small></p>
+                            <small class="text-danger">Not Authorized</small>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 1. Anthropic API Key -->
         <div class="card p-4 mb-4">
-            <h5><i class="bi bi-envelope me-2"></i>Email Settings</h5>
+            <h5><i class="bi bi-robot me-2"></i>Anthropic API Key</h5>
+            <p class="text-muted small">Required for AI email generation and intent detection</p>
+            <hr>
+
+            <form method="POST" action="/settings/update-api-key">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">API Key</label>
+                    <input type="text" name="anthropic_api_key" class="form-control font-monospace"
+                           placeholder="sk-ant-api03-..."
+                           {% if credentials_status.anthropic_api_key %}value="••••••••••••••••••••••••"{% endif %}>
+                    <small class="text-muted d-block mt-2">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Get your API key from <a href="https://console.anthropic.com/settings/keys" target="_blank">Anthropic Console</a>
+                    </small>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-save me-1"></i>Update API Key
+                    </button>
+                    <button type="button" class="btn btn-outline-success" onclick="testApiKey()">
+                        <i class="bi bi-check-circle me-1"></i>Test Connection
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- 2. Google Sheets ID -->
+        <div class="card p-4 mb-4">
+            <h5><i class="bi bi-table me-2"></i>Google Sheets ID</h5>
+            <p class="text-muted small">Your personal customer database (required)</p>
+            <hr>
+
+            <form method="POST" action="/settings/update-sheets-id">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Sheets ID</label>
+                    <input type="text" name="google_sheets_id" class="form-control font-monospace"
+                           value="{{ user.google_sheets_id|e }}"
+                           placeholder="1AbC2dEfGhIjK3LmNoPqRsTuVwXyZ...">
+                    <small class="text-muted d-block mt-2">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Find this in your Google Sheets URL between <code>/d/</code> and <code>/edit</code>
+                    </small>
+                </div>
+
+                <div class="alert alert-info mb-3">
+                    <i class="bi bi-lightbulb me-2"></i>
+                    <strong>Don't have a sheet?</strong> Click "Auto-Create Sheet" to generate one with all required columns automatically!
+                </div>
+
+                <div class="d-flex gap-2 flex-wrap">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-save me-1"></i>Update Sheets ID
+                    </button>
+                    <button type="button" class="btn btn-outline-success" onclick="testSheets()">
+                        <i class="bi bi-check-circle me-1"></i>Test Connection
+                    </button>
+                    <button type="button" class="btn btn-success" onclick="autoCreateSheet()">
+                        <i class="bi bi-magic me-1"></i>Auto-Create Sheet
+                    </button>
+                    {% if user.google_sheets_id %}
+                    <a href="https://docs.google.com/spreadsheets/d/{{ user.google_sheets_id }}"
+                       target="_blank" class="btn btn-outline-primary">
+                        <i class="bi bi-box-arrow-up-right me-1"></i>Open in Google Sheets
+                    </a>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+
+        <!-- 3. Google Service Account -->
+        <div class="card p-4 mb-4">
+            <h5><i class="bi bi-file-earmark-code me-2"></i>Google Service Account</h5>
+            <p class="text-muted small">Required to read/write Google Sheets automatically</p>
+            <hr>
+
+            <form method="POST" action="/settings/update-service-account">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Service Account JSON</label>
+                    <textarea name="service_account_json" class="form-control font-monospace" rows="8"
+                              placeholder='{"type": "service_account", "project_id": "your-project", ...}'></textarea>
+                    <small class="text-muted d-block mt-2">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Paste the entire contents of your <code>service_account.json</code> file.
+                        <a href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank">Create one here</a>
+                    </small>
+                </div>
+
+                <div class="alert alert-warning mb-3">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>Important:</strong> After creating the service account, share your Google Sheet with the service account email (e.g., <code>my-service@project.iam.gserviceaccount.com</code>) and grant "Editor" permission.
+                </div>
+
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-save me-1"></i>Update Service Account
+                </button>
+            </form>
+        </div>
+
+        <!-- 4. Gmail OAuth -->
+        <div class="card p-4 mb-4">
+            <h5><i class="bi bi-envelope me-2"></i>Gmail OAuth Authorization</h5>
+            <p class="text-muted small">Required to send emails via Gmail API</p>
+            <hr>
+
+            {% if credentials_status.gmail_token %}
+                <div class="alert alert-success mb-3">
+                    <i class="bi bi-check-circle me-2"></i>
+                    <strong>Gmail is authorized!</strong> You can send emails using Gmail API.
+                </div>
+                <div class="d-flex gap-2">
+                    <a href="/oauth/authorize" class="btn btn-outline-primary">
+                        <i class="bi bi-arrow-repeat me-1"></i>Re-authorize Gmail
+                    </a>
+                    <button type="button" class="btn btn-outline-success" onclick="testGmail()">
+                        <i class="bi bi-check-circle me-1"></i>Test Connection
+                    </button>
+                </div>
+            {% else %}
+                <div class="alert alert-warning mb-3">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>Gmail not authorized.</strong> Click "Authorize Gmail" to connect your account.
+                </div>
+                <a href="/oauth/authorize" class="btn btn-primary">
+                    <i class="bi bi-google me-1"></i>Authorize Gmail
+                </a>
+            {% endif %}
+        </div>
+
+        <!-- Quick Setup Guide -->
+        <div class="card p-4 border-info">
+            <h5><i class="bi bi-question-circle me-2 text-info"></i>Quick Setup Guide</h5>
+            <hr>
+            <ol class="mb-0">
+                <li class="mb-2">
+                    <strong>Anthropic API Key:</strong> Sign up at <a href="https://console.anthropic.com" target="_blank">Anthropic Console</a>,
+                    go to Settings → API Keys, create a new key, and paste it above.
+                </li>
+                <li class="mb-2">
+                    <strong>Google Service Account:</strong> Go to <a href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank">GCP Console</a>,
+                    create a service account, download the JSON key, and paste it above.
+                </li>
+                <li class="mb-2">
+                    <strong>Google Sheets:</strong> Either click "Auto-Create Sheet" to generate one automatically,
+                    or create manually and paste the ID from the URL.
+                </li>
+                <li class="mb-2">
+                    <strong>Gmail OAuth:</strong> Click "Authorize Gmail" and grant permissions.
+                    You'll be redirected back automatically.
+                </li>
+            </ol>
+        </div>
+
+    </div>
+
+    <!-- ========== EMAIL SETTINGS TAB ========== -->
+    <div class="tab-pane fade" id="email" role="tabpanel">
+        <div class="card p-4">
+            <h5><i class="bi bi-envelope me-2"></i>Email & Company Settings</h5>
             <hr>
             <form method="POST" action="/settings/save">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <div class="mb-3">
-                    <label class="form-label">Sender Name</label>
-                    <input type="text" class="form-control" name="SENDER_NAME" value="{{ settings.get('SENDER_NAME', '')|e }}" maxlength="100">
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Sender Email</label>
-                    <input type="email" class="form-control" name="SENDER_EMAIL" value="{{ settings.get('SENDER_EMAIL', '')|e }}" maxlength="254">
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Sender Title</label>
-                    <input type="text" class="form-control" name="SENDER_TITLE" value="{{ settings.get('SENDER_TITLE', '')|e }}" placeholder="e.g. Business Development Manager" maxlength="100">
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Company Name</label>
-                    <input type="text" class="form-control" name="COMPANY_NAME" value="{{ settings.get('COMPANY_NAME', '')|e }}" placeholder="e.g. Lorh La Seng Commercial" maxlength="200">
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Company Phone</label>
-                    <input type="text" class="form-control" name="COMPANY_PHONE" value="{{ settings.get('COMPANY_PHONE', '')|e }}" placeholder="e.g. +856 20 xxxx xxxx" maxlength="30">
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Company Website</label>
-                    <input type="text" class="form-control" name="COMPANY_WEBSITE" value="{{ settings.get('COMPANY_WEBSITE', '')|e }}" placeholder="e.g. www.lorhquartz.com" maxlength="200">
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Company Address</label>
-                    <input type="text" class="form-control" name="COMPANY_ADDRESS" value="{{ settings.get('COMPANY_ADDRESS', '')|e }}" maxlength="300">
-                </div>
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label">Max Emails/Day</label>
-                        <input type="number" class="form-control" name="MAX_EMAILS_PER_DAY" value="{{ settings.get('MAX_EMAILS_PER_DAY', '50') }}">
+
+                <h6 class="text-primary mt-3 mb-3">Sender Information</h6>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Sender Name</label>
+                        <input type="text" class="form-control" name="sender_name"
+                               value="{{ user.sender_name|e }}" placeholder="John Doe">
                     </div>
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label">Research Delay (sec)</label>
-                        <input type="number" class="form-control" name="RESEARCH_DELAY_SECONDS" value="{{ settings.get('RESEARCH_DELAY_SECONDS', '2') }}">
+                    <div class="col-md-6">
+                        <label class="form-label">Sender Email</label>
+                        <input type="email" class="form-control" name="sender_email"
+                               value="{{ user.sender_email|e }}" placeholder="john@company.com">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Sender Title</label>
+                        <input type="text" class="form-control" name="sender_title"
+                               value="{{ user.sender_title|e }}" placeholder="Business Development Manager">
                     </div>
                 </div>
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label">Max Research/Run</label>
-                        <input type="number" class="form-control" name="MAX_RESEARCH_PER_RUN" value="{{ settings.get('MAX_RESEARCH_PER_RUN', '5') }}">
+
+                <h6 class="text-primary mt-4 mb-3">Company Information</h6>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Company Name</label>
+                        <input type="text" class="form-control" name="company_name"
+                               value="{{ user.company_name|e }}" placeholder="Acme Corporation">
                     </div>
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label">Email Check Interval (hrs)</label>
-                        <input type="number" class="form-control" name="EMAIL_CHECK_INTERVAL_HOURS" value="{{ settings.get('EMAIL_CHECK_INTERVAL_HOURS', '24') }}">
+                    <div class="col-md-6">
+                        <label class="form-label">Company Phone</label>
+                        <input type="tel" class="form-control" name="company_phone"
+                               value="{{ user.company_phone|e }}" placeholder="+1 (555) 123-4567">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Company Website</label>
+                        <input type="url" class="form-control" name="company_website"
+                               value="{{ user.company_website|e }}" placeholder="https://example.com">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Company Address</label>
+                        <input type="text" class="form-control" name="company_address"
+                               value="{{ user.company_address|e }}" placeholder="123 Main St, City, State">
                     </div>
                 </div>
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label">Auto-Reply Confidence</label>
-                        <input type="number" step="0.1" min="0" max="1" class="form-control" name="AUTO_REPLY_CONFIDENCE_THRESHOLD" value="{{ settings.get('AUTO_REPLY_CONFIDENCE_THRESHOLD', '0.8') }}">
-                        <small class="text-muted">Min confidence for auto-replies (0-1)</small>
-                    </div>
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label">Follow-up After (days)</label>
-                        <input type="number" min="1" max="30" class="form-control" name="FOLLOWUP_DAYS" value="{{ settings.get('FOLLOWUP_DAYS', '3') }}">
-                        <small class="text-muted">Auto follow-up if no reply after X days</small>
-                    </div>
-                </div>
-                <button type="submit" class="btn btn-primary w-100"><i class="bi bi-save me-1"></i>Save Settings</button>
+
+                <hr class="my-4">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-save me-1"></i>Save Email Settings
+                </button>
             </form>
         </div>
     </div>
 
-    <div class="col-md-6">
-        <div class="card p-4 mb-4">
-            <h5><i class="bi bi-key me-2"></i>API & Credentials</h5>
+    <!-- ========== AUTOMATION TAB ========== -->
+    <div class="tab-pane fade" id="automation" role="tabpanel">
+        <div class="card p-4">
+            <h5><i class="bi bi-robot me-2"></i>Automation Settings</h5>
             <hr>
-            <div class="mb-3">
-                <label class="form-label">Anthropic API Key</label>
-                <div class="input-group">
-                    <input type="password" class="form-control" value="********" disabled>
-                    <span class="input-group-text"><i class="bi bi-check-circle text-success"></i></span>
+            <form method="POST" action="/settings/save">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Max Emails per Day</label>
+                        <input type="number" class="form-control" name="max_emails_per_day"
+                               value="{{ user.max_emails_per_day }}" min="1" max="500">
+                        <small class="text-muted">Limit daily outbound emails</small>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Research Delay (seconds)</label>
+                        <input type="number" class="form-control" name="research_delay_seconds"
+                               value="{{ user.research_delay_seconds }}" min="1" max="60">
+                        <small class="text-muted">Delay between AI research calls</small>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Max Research per Run</label>
+                        <input type="number" class="form-control" name="max_research_per_run"
+                               value="{{ user.max_research_per_run }}" min="1" max="50">
+                        <small class="text-muted">Max customers to research at once</small>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Follow-up After (days)</label>
+                        <input type="number" class="form-control" name="followup_days"
+                               value="{{ user.followup_days }}" min="1" max="30">
+                        <small class="text-muted">Auto follow-up if no reply</small>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Auto-Reply Confidence Threshold</label>
+                        <input type="number" step="0.1" min="0" max="1" class="form-control"
+                               name="auto_reply_confidence" value="{{ user.auto_reply_confidence }}">
+                        <small class="text-muted">Min AI confidence for auto-replies (0-1)</small>
+                    </div>
                 </div>
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Google Sheets ID</label>
-                <input type="text" class="form-control" value="{{ settings.get('GOOGLE_SHEETS_ID', '')|e }}" disabled>
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Gmail Credentials</label>
-                <input type="text" class="form-control" value="{{ settings.get('GMAIL_CREDENTIALS_PATH', 'gmail_credentials.json') }}" disabled>
-            </div>
-            <small class="text-muted">Edit API keys directly in config/.env</small>
+
+                <hr class="my-4">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-save me-1"></i>Save Automation Settings
+                </button>
+            </form>
         </div>
 
-        <div class="card p-4">
-            <h5><i class="bi bi-info-circle me-2"></i>System Info</h5>
+        <!-- System Info -->
+        <div class="card p-4 mt-4">
+            <h5><i class="bi bi-info-circle me-2"></i>System Information</h5>
             <hr>
-            <table class="table table-sm mb-0">
-                <tr><td class="text-muted">Version</td><td>3.0 (Refactored)</td></tr>
-                <tr><td class="text-muted">AI Model</td><td>Claude Sonnet</td></tr>
-                <tr><td class="text-muted">Database</td><td>Google Sheets</td></tr>
-                <tr><td class="text-muted">Email Provider</td><td>Gmail API</td></tr>
-                <tr><td class="text-muted">Compliance</td><td>GDPR + CAN-SPAM</td></tr>
-            </table>
+            <div class="row">
+                <div class="col-md-6">
+                    <p class="mb-2"><strong>Version:</strong> 3.0.0</p>
+                    <p class="mb-2"><strong>AI Model:</strong> Claude Sonnet 4</p>
+                    <p class="mb-2"><strong>Database:</strong> SQLite + Google Sheets</p>
+                </div>
+                <div class="col-md-6">
+                    <p class="mb-2"><strong>Email Provider:</strong> Gmail API</p>
+                    <p class="mb-2"><strong>User ID:</strong> {{ user.id }}</p>
+                    <p class="mb-2"><strong>Account Created:</strong> {{ user.created_at[:10] }}</p>
+                </div>
+            </div>
         </div>
     </div>
+
 </div>
+
+<!-- JavaScript for Test Buttons -->
+<script>
+function testApiKey() {
+    if (confirm('Test Anthropic API connection? This will make a small API call.')) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/settings/test-api-key';
+
+        const csrf = document.createElement('input');
+        csrf.type = 'hidden';
+        csrf.name = 'csrf_token';
+        csrf.value = '{{ csrf_token() }}';
+        form.appendChild(csrf);
+
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+function testSheets() {
+    if (confirm('Test Google Sheets connection?')) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/settings/test-sheets';
+
+        const csrf = document.createElement('input');
+        csrf.type = 'hidden';
+        csrf.name = 'csrf_token';
+        csrf.value = '{{ csrf_token() }}';
+        form.appendChild(csrf);
+
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+function testGmail() {
+    if (confirm('Test Gmail OAuth connection?')) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/settings/test-gmail';
+
+        const csrf = document.createElement('input');
+        csrf.type = 'hidden';
+        csrf.name = 'csrf_token';
+        csrf.value = '{{ csrf_token() }}';
+        form.appendChild(csrf);
+
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+function autoCreateSheet() {
+    if (confirm('Auto-create a new Google Sheet with all required columns? This will replace your current Sheets ID.')) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/settings/auto-create-sheet';
+
+        const csrf = document.createElement('input');
+        csrf.type = 'hidden';
+        csrf.name = 'csrf_token';
+        csrf.value = '{{ csrf_token() }}';
+        form.appendChild(csrf);
+
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+</script>
+
 {% endblock %}
