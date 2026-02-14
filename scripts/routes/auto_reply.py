@@ -6,7 +6,7 @@ import subprocess
 from datetime import datetime, timedelta
 from flask import Blueprint, render_template, redirect, url_for, flash, jsonify, request
 from app_core import (login_required, PIPELINE_STAGES, get_sheets, get_user_config,
-                      SPAM_DOMAINS, classify_reply, logger,
+                      SPAM_DOMAINS, classify_reply, classify_reply_smart, logger,
                       safe_flash_error, get_gmail_service_for_user, EmailTracker)
 
 auto_reply_bp = Blueprint('auto_reply', __name__)
@@ -168,7 +168,48 @@ def check_replies_now():
                 continue
 
             reply_body = reply.get('body', '')
-            req_type, detected_stage = classify_reply(reply_body)
+
+            # Find matching customer record for AI context
+            matched_record = None
+            for record in tracking_records:
+                record_email = record.get('contact_email', '').lower()
+                if record_email and record_email == from_email.lower():
+                    matched_record = record
+                    break
+
+            # Use AI-powered classification
+            if matched_record:
+                customer_context = {
+                    'company_name': matched_record.get('company_name', ''),
+                    'industry': matched_record.get('industry', ''),
+                }
+                current_stage = int(matched_record.get('pipeline_stage', 1)) if str(matched_record.get('pipeline_stage', '')).isdigit() else 1
+
+                classification = classify_reply_smart(
+                    reply_body=reply_body,
+                    subject=reply.get('subject', ''),
+                    current_stage=current_stage,
+                    customer_context=customer_context,
+                    use_ai=True
+                )
+
+                req_type = classification['intent']
+                detected_stage = classification['stage']
+                urgency = classification.get('urgency_level', 'medium')
+                sentiment = classification.get('sentiment', 'neutral')
+                buying_signals = classification.get('buying_signals', [])
+
+                # Enhanced summary with AI metadata
+                summary_parts = [f'[{req_type}]']
+                if urgency == 'high':
+                    summary_parts.append('[URGENT]')
+                if buying_signals:
+                    summary_parts.append(f'[Signals: {len(buying_signals)}]')
+                summary_parts.append(reply_body[:150])
+                summary = ' '.join(summary_parts)
+            else:
+                req_type, detected_stage = classify_reply(reply_body)
+                summary = f'[{req_type}] {reply_body[:200]}'
 
             import time as time_mod
             for idx, record in enumerate(tracking_records, start=2):
@@ -181,7 +222,7 @@ def check_replies_now():
                     updates = {
                         'replied': 'yes',
                         'reply_date': datetime.now().strftime('%Y-%m-%d'),
-                        'reply_content_summary': f'[{req_type}] {reply_body[:200]}',
+                        'reply_content_summary': summary,
                         'next_action': f'Send Stage {detected_stage} info',
                         'status': 'replied',
                         'detected_stage': str(detected_stage),

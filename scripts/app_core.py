@@ -328,7 +328,7 @@ _REPLY_RULES = [
 ]
 
 def classify_reply(reply_body):
-    """Classify a customer reply by type and detect pipeline stage."""
+    """Classify a customer reply by type and detect pipeline stage (keyword-based)."""
     text = reply_body.lower()
     for label, stage, patterns in _REPLY_RULES:
         for p in patterns:
@@ -339,6 +339,173 @@ def classify_reply(reply_body):
                 if p in text:
                     return label, stage
     return 'General Reply', None
+
+
+def classify_reply_smart(
+    reply_body,
+    subject="",
+    current_stage=1,
+    email_history=None,
+    customer_context=None,
+    use_ai=True
+):
+    """
+    Smart reply classification with AI fallback for higher accuracy.
+
+    Args:
+        reply_body: Email body text
+        subject: Email subject line
+        current_stage: Current pipeline stage
+        email_history: Previous emails in thread
+        customer_context: Additional context (company_name, industry, etc.)
+        use_ai: Whether to use AI for classification (default True)
+
+    Returns:
+        dict: {
+            'intent': str,           # Primary intent label
+            'stage': int or None,    # Recommended pipeline stage
+            'confidence': float,     # Confidence score 0.0-1.0
+            'multiple_intents': bool,  # True if multiple intents detected
+            'secondary_intents': list,
+            'urgency_level': str,    # high/medium/low
+            'sentiment': str,        # positive/neutral/negative
+            'buying_signals': list,
+            'objections': list,
+            'reasoning': str,
+            'ai_used': bool          # True if AI was used
+        }
+    """
+    # Try keyword matching first (fast, free)
+    keyword_result, keyword_stage = classify_reply(reply_body)
+
+    # Count how many keyword rules matched
+    text = reply_body.lower()
+    matches = []
+    for label, stage, patterns in _REPLY_RULES:
+        for p in patterns:
+            if p.startswith(r'\b'):
+                if re.search(p, text):
+                    matches.append((label, stage))
+                    break
+            else:
+                if p in text:
+                    matches.append((label, stage))
+                    break
+
+    # Decide whether to use AI:
+    # - Multiple keyword matches (ambiguous)
+    # - No keyword match (General Reply)
+    # - Complex email (>100 words suggests complexity)
+    word_count = len(reply_body.split())
+    needs_ai = (
+        len(matches) > 1 or
+        keyword_result == 'General Reply' or
+        word_count > 100
+    )
+
+    # If AI not needed or not available, return keyword result
+    if not use_ai or not needs_ai:
+        return {
+            'intent': keyword_result,
+            'stage': keyword_stage,
+            'confidence': 0.7 if keyword_result != 'General Reply' else 0.3,
+            'multiple_intents': len(matches) > 1,
+            'secondary_intents': [],
+            'urgency_level': 'medium',
+            'sentiment': 'neutral',
+            'buying_signals': [],
+            'objections': [],
+            'reasoning': f'Keyword match: {keyword_result}',
+            'ai_used': False
+        }
+
+    # Use AI for analysis
+    try:
+        from ai_engines import SmartIntentDetectionEngine
+        api_key = get_api_key()
+
+        if not api_key:
+            logger.warning("No API key available for AI classification")
+            return {
+                'intent': keyword_result,
+                'stage': keyword_stage,
+                'confidence': 0.5,
+                'multiple_intents': False,
+                'secondary_intents': [],
+                'urgency_level': 'medium',
+                'sentiment': 'neutral',
+                'buying_signals': [],
+                'objections': [],
+                'reasoning': 'API key not available, using keyword fallback',
+                'ai_used': False
+            }
+
+        engine = SmartIntentDetectionEngine(api_key)
+        ai_result = engine.analyze_email_intent(
+            email_body=reply_body,
+            subject=subject,
+            current_stage=current_stage,
+            email_history=email_history,
+            customer_context=customer_context
+        )
+
+        # Map AI intent to readable label
+        intent_label_map = {
+            'info_request': 'Info Request',
+            'technical_info_request': 'Technical Info Request',
+            'sample_request': 'Sample Request',
+            'quotation_request': 'Quotation Request',
+            'contract_request': 'Contract Request',
+            'shipping_inquiry': 'Shipping Inquiry',
+            'repeat_order': 'Repeat Order',
+            'declined': 'Declined',
+            'general_reply': 'General Reply',
+        }
+
+        primary_intent = intent_label_map.get(
+            ai_result.get('primary_intent', 'general_reply'),
+            ai_result.get('primary_intent', 'General Reply')
+        )
+
+        # Use AI result if confidence is high (>0.75), otherwise blend with keyword result
+        if ai_result.get('confidence_score', 0) >= 0.75:
+            final_intent = primary_intent
+            final_stage = ai_result.get('recommended_stage')
+        else:
+            # Low AI confidence, use keyword result but keep AI metadata
+            final_intent = keyword_result
+            final_stage = keyword_stage
+
+        return {
+            'intent': final_intent,
+            'stage': final_stage,
+            'confidence': ai_result.get('confidence_score', 0.5),
+            'multiple_intents': len(ai_result.get('secondary_intents', [])) > 0,
+            'secondary_intents': ai_result.get('secondary_intents', []),
+            'urgency_level': ai_result.get('urgency_level', 'medium'),
+            'sentiment': ai_result.get('sentiment', 'neutral'),
+            'buying_signals': ai_result.get('buying_signals', []),
+            'objections': ai_result.get('objections', []),
+            'reasoning': ai_result.get('reasoning', 'AI analysis completed'),
+            'ai_used': True
+        }
+
+    except Exception as e:
+        logger.error(f"AI classification failed: {e}", exc_info=True)
+        # Fallback to keyword result
+        return {
+            'intent': keyword_result,
+            'stage': keyword_stage,
+            'confidence': 0.6,
+            'multiple_intents': False,
+            'secondary_intents': [],
+            'urgency_level': 'medium',
+            'sentiment': 'neutral',
+            'buying_signals': [],
+            'objections': [],
+            'reasoning': f'AI failed, keyword fallback: {str(e)[:100]}',
+            'ai_used': False
+        }
 
 # ── Settings validators ───────────────────────────────
 SETTINGS_VALIDATORS = {
@@ -369,3 +536,124 @@ FOLLOWUP_DAYS = int(os.getenv('FOLLOWUP_DAYS', '3'))
 def reload_config():
     """No-op in multi-user mode. Settings are per-user in SQLite."""
     pass
+
+
+def create_user_sheet_template(user):
+    """
+    Auto-create a Google Sheets template for new user with pre-configured columns.
+
+    Args:
+        user: User object with service account credential
+
+    Returns:
+        str: The created Google Sheets ID
+
+    Raises:
+        ValueError: If service account not configured
+        Exception: If sheet creation fails
+    """
+    from googleapiclient.discovery import build
+    from google.oauth2.service_account import Credentials
+    import json
+
+    # Get user's service account
+    sa_json = user.get_credential('service_account')
+    if not sa_json:
+        raise ValueError("Service account not configured")
+
+    sa_data = json.loads(sa_json)
+    credentials = Credentials.from_service_account_info(
+        sa_data,
+        scopes=['https://www.googleapis.com/auth/spreadsheets']
+    )
+
+    # Create Sheets API service
+    service = build('sheets', 'v4', credentials=credentials)
+
+    # Create spreadsheet with formatted header row
+    spreadsheet = {
+        'properties': {
+            'title': f'Quartz Outreach - {user.display_name or user.email}',
+            'locale': 'en_US',
+            'timeZone': 'America/New_York',
+        },
+        'sheets': [{
+            'properties': {
+                'title': 'Customers',
+                'gridProperties': {
+                    'frozenRowCount': 1,  # Freeze header row
+                    'frozenColumnCount': 0,
+                },
+            },
+            'data': [{
+                'startRow': 0,
+                'startColumn': 0,
+                'rowData': [{
+                    'values': [
+                        {
+                            'userEnteredValue': {'stringValue': 'Company'},
+                            'userEnteredFormat': {
+                                'backgroundColor': {'red': 0.2, 'green': 0.3, 'blue': 0.5},
+                                'textFormat': {'bold': True, 'foregroundColor': {'red': 1, 'green': 1, 'blue': 1}},
+                            }
+                        },
+                        {
+                            'userEnteredValue': {'stringValue': 'Email'},
+                            'userEnteredFormat': {
+                                'backgroundColor': {'red': 0.2, 'green': 0.3, 'blue': 0.5},
+                                'textFormat': {'bold': True, 'foregroundColor': {'red': 1, 'green': 1, 'blue': 1}},
+                            }
+                        },
+                        {
+                            'userEnteredValue': {'stringValue': 'Contact Name'},
+                            'userEnteredFormat': {
+                                'backgroundColor': {'red': 0.2, 'green': 0.3, 'blue': 0.5},
+                                'textFormat': {'bold': True, 'foregroundColor': {'red': 1, 'green': 1, 'blue': 1}},
+                            }
+                        },
+                        {
+                            'userEnteredValue': {'stringValue': 'Stage'},
+                            'userEnteredFormat': {
+                                'backgroundColor': {'red': 0.2, 'green': 0.3, 'blue': 0.5},
+                                'textFormat': {'bold': True, 'foregroundColor': {'red': 1, 'green': 1, 'blue': 1}},
+                            }
+                        },
+                        {
+                            'userEnteredValue': {'stringValue': 'Last Contact'},
+                            'userEnteredFormat': {
+                                'backgroundColor': {'red': 0.2, 'green': 0.3, 'blue': 0.5},
+                                'textFormat': {'bold': True, 'foregroundColor': {'red': 1, 'green': 1, 'blue': 1}},
+                            }
+                        },
+                        {
+                            'userEnteredValue': {'stringValue': 'Engagement'},
+                            'userEnteredFormat': {
+                                'backgroundColor': {'red': 0.2, 'green': 0.3, 'blue': 0.5},
+                                'textFormat': {'bold': True, 'foregroundColor': {'red': 1, 'green': 1, 'blue': 1}},
+                            }
+                        },
+                        {
+                            'userEnteredValue': {'stringValue': 'Status'},
+                            'userEnteredFormat': {
+                                'backgroundColor': {'red': 0.2, 'green': 0.3, 'blue': 0.5},
+                                'textFormat': {'bold': True, 'foregroundColor': {'red': 1, 'green': 1, 'blue': 1}},
+                            }
+                        },
+                        {
+                            'userEnteredValue': {'stringValue': 'Notes'},
+                            'userEnteredFormat': {
+                                'backgroundColor': {'red': 0.2, 'green': 0.3, 'blue': 0.5},
+                                'textFormat': {'bold': True, 'foregroundColor': {'red': 1, 'green': 1, 'blue': 1}},
+                            }
+                        },
+                    ]
+                }]
+            }]
+        }]
+    }
+
+    result = service.spreadsheets().create(body=spreadsheet, fields='spreadsheetId').execute()
+    sheet_id = result['spreadsheetId']
+
+    logger.info(f"Created Google Sheet {sheet_id} for user {user.email}")
+    return sheet_id

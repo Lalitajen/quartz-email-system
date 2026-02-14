@@ -8,7 +8,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from app_core import (login_required, get_sheets, PIPELINE_STAGES, SPAM_DOMAINS,
                       EmailTracker, EmailPersonalizationEngine, get_api_key,
                       get_sender_info, get_user_config, create_email_log,
-                      classify_reply, logger, safe_flash_error,
+                      classify_reply, classify_reply_smart, logger, safe_flash_error,
                       get_gmail_service_for_user)
 from services.email_service import send_email_via_gmail
 
@@ -125,7 +125,47 @@ def check_replies_now():
                 continue
 
             reply_body = reply.get('body', '')
-            req_type, detected_stage = classify_reply(reply_body)
+
+            # Find matching customer record first for context
+            matched_record = None
+            for record in tracking_records:
+                record_email = record.get('contact_email', '').lower()
+                if record_email and record_email == from_email.lower():
+                    matched_record = record
+                    break
+
+            # Use AI-powered classification with customer context
+            if matched_record:
+                customer_context = {
+                    'company_name': matched_record.get('company_name', ''),
+                    'industry': matched_record.get('industry', ''),
+                }
+                current_stage = int(matched_record.get('pipeline_stage', 1)) if str(matched_record.get('pipeline_stage', '')).isdigit() else 1
+
+                classification = classify_reply_smart(
+                    reply_body=reply_body,
+                    subject=reply.get('subject', ''),
+                    current_stage=current_stage,
+                    customer_context=customer_context,
+                    use_ai=True
+                )
+
+                req_type = classification['intent']
+                detected_stage = classification['stage']
+                confidence = classification['confidence']
+                urgency = classification.get('urgency_level', 'medium')
+                sentiment = classification.get('sentiment', 'neutral')
+                buying_signals = classification.get('buying_signals', [])
+
+                logger.info(f"AI Classification: {req_type} (stage {detected_stage}, confidence {confidence:.2f}, urgency {urgency}, sentiment {sentiment})")
+
+                if buying_signals:
+                    logger.info(f"Buying signals detected: {buying_signals}")
+            else:
+                # Fallback to simple keyword classification
+                req_type, detected_stage = classify_reply(reply_body)
+                confidence = 0.5
+
             if detected_stage is None:
                 detected_stage = 2
 
