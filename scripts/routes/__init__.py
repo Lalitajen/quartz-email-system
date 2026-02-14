@@ -15,6 +15,7 @@ from .auto_reply import auto_reply_bp
 from .ai_insights import ai_insights_bp
 from .setup import setup_bp
 from .admin import admin_bp
+from .smart_setup import smart_setup_bp
 
 ALL_BLUEPRINTS = [
     auth_bp,
@@ -32,4 +33,5 @@ ALL_BLUEPRINTS = [
     ai_insights_bp,
     setup_bp,
     admin_bp,
+    smart_setup_bp,
 ]

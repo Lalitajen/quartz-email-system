@@ -1,0 +1,359 @@
+{% extends "base.html" %}
+{% block title %}Smart Setup Assistant{% endblock %}
+
+{% block content %}
+<div class="page-header text-center">
+    <h2><i class="bi bi-magic me-2"></i>Smart Setup Assistant</h2>
+    <p class="text-muted">AI-powered one-click credential configuration</p>
+</div>
+
+<!-- Overall Progress -->
+<div class="card p-4 mb-4 border-primary">
+    <div class="row align-items-center">
+        <div class="col-md-8">
+            <h5 class="mb-3">Setup Progress</h5>
+            <div class="progress" style="height: 30px;">
+                {% set completion = setup_status.overall_completion %}
+                {% if completion == 100 %}
+                    <div class="progress-bar bg-success progress-bar-striped progress-bar-animated"
+                         style="width: 100%">
+                        🎉 100% Complete - All Set!
+                    </div>
+                {% elif completion >= 75 %}
+                    <div class="progress-bar bg-info progress-bar-striped"
+                         style="width: {{ completion }}%">
+                        {{ completion }}% - Almost There!
+                    </div>
+                {% elif completion >= 50 %}
+                    <div class="progress-bar bg-warning progress-bar-striped"
+                         style="width: {{ completion }}%">
+                        {{ completion }}% - Halfway Done
+                    </div>
+                {% else %}
+                    <div class="progress-bar bg-danger progress-bar-striped"
+                         style="width: {{ completion }}%">
+                        {{ completion }}% - Let's Get Started
+                    </div>
+                {% endif %}
+            </div>
+            <p class="text-muted mt-2 mb-0">
+                <small>{{ setup_status.completed_steps }} of {{ setup_status.total_steps }} steps completed</small>
+            </p>
+        </div>
+        <div class="col-md-4 text-center">
+            {% if setup_status.overall_completion < 100 %}
+                {% if setup_status.can_auto_complete %}
+                    <form method="POST" action="/smart-setup/auto-complete">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-success btn-lg w-100 mb-2">
+                            <i class="bi bi-magic me-2"></i>Auto-Complete Setup
+                        </button>
+                    </form>
+                    <small class="text-muted">Automatically configure remaining steps</small>
+                {% else %}
+                    <p class="text-muted mb-2">Complete steps below to enable auto-setup</p>
+                {% endif %}
+            {% else %}
+                <div class="alert alert-success mb-0">
+                    <i class="bi bi-check-circle-fill me-2"></i>
+                    <strong>Setup Complete!</strong>
+                    <br><small>All credentials configured</small>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Credential Status Cards -->
+<div class="row g-3 mb-4">
+    {% for cred_key, cred in setup_status.credentials.items() %}
+    <div class="col-md-6">
+        <div class="card h-100 {% if cred.configured %}border-success{% else %}border-warning{% endif %}">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <div>
+                        <h6 class="mb-0">
+                            <i class="bi bi-{{ cred.icon }} me-2 text-{{ cred.color }}"></i>
+                            {{ cred.name }}
+                        </h6>
+                    </div>
+                    <div>
+                        {% if cred.configured %}
+                            <span class="badge bg-success">
+                                <i class="bi bi-check-circle me-1"></i>Configured
+                            </span>
+                        {% else %}
+                            <span class="badge bg-warning">
+                                <i class="bi bi-exclamation-triangle me-1"></i>Pending
+                            </span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <p class="text-muted small mb-3">{{ cred.instructions }}</p>
+
+                <div class="d-flex gap-2 flex-wrap">
+                    {% if cred.configured %}
+                        {% if cred.test_endpoint %}
+                        <form method="POST" action="{{ cred.test_endpoint }}" class="d-inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-sm btn-outline-success">
+                                <i class="bi bi-check-circle me-1"></i>Test
+                            </button>
+                        </form>
+                        {% endif %}
+                        <a href="/settings" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-pencil me-1"></i>Update
+                        </a>
+                    {% else %}
+                        {% if cred.auto_configurable and cred.auto_setup_endpoint %}
+                        <form method="POST" action="{{ cred.auto_setup_endpoint }}" class="d-inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-sm btn-{{ cred.color }}">
+                                <i class="bi bi-magic me-1"></i>{{ cred.auto_setup_label }}
+                            </button>
+                        </form>
+                        {% else %}
+                        <a href="/settings" class="btn btn-sm btn-{{ cred.color }}">
+                            <i class="bi bi-plus-circle me-1"></i>Configure
+                        </a>
+                        {% endif %}
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Quick Configuration Form -->
+{% if setup_status.overall_completion < 100 %}
+<div class="card p-4 mb-4 border-info">
+    <h5><i class="bi bi-lightning-charge me-2 text-info"></i>Quick Configuration</h5>
+    <p class="text-muted">Paste your credentials below and we'll auto-configure everything!</p>
+    <hr>
+
+    <form method="POST" action="/smart-setup/quick-config">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div class="mb-3">
+            <label class="form-label fw-bold">
+                <i class="bi bi-robot me-1 text-primary"></i>
+                Anthropic API Key
+                {% if setup_status.credentials.anthropic_api_key.configured %}
+                    <span class="badge bg-success ms-2">✓</span>
+                {% endif %}
+            </label>
+            <input type="text" name="anthropic_api_key" class="form-control font-monospace"
+                   placeholder="sk-ant-api03-..."
+                   {% if setup_status.credentials.anthropic_api_key.configured %}disabled{% endif %}>
+            <small class="text-muted">
+                Get from <a href="https://console.anthropic.com/settings/keys" target="_blank">Anthropic Console</a>
+            </small>
+        </div>
+
+        <div class="mb-4">
+            <label class="form-label fw-bold">
+                <i class="bi bi-file-earmark-code me-1 text-info"></i>
+                Google Service Account JSON
+                {% if setup_status.credentials.service_account.configured %}
+                    <span class="badge bg-success ms-2">✓</span>
+                {% endif %}
+            </label>
+            <textarea name="service_account_json" class="form-control font-monospace" rows="6"
+                      placeholder='{"type": "service_account", "project_id": "...", ...}'
+                      {% if setup_status.credentials.service_account.configured %}disabled{% endif %}></textarea>
+            <small class="text-muted">
+                Download from <a href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank">Google Cloud Console</a>
+            </small>
+        </div>
+
+        <div class="alert alert-info mb-3">
+            <i class="bi bi-info-circle me-2"></i>
+            <strong>What happens when you submit:</strong>
+            <ol class="mb-0 mt-2">
+                <li>API key and service account are encrypted and saved</li>
+                <li>Google Sheet is auto-created with all columns</li>
+                <li>You're redirected to Gmail authorization (one click)</li>
+                <li>Setup complete! 🎉</li>
+            </ol>
+        </div>
+
+        {% if not setup_status.credentials.anthropic_api_key.configured or not setup_status.credentials.service_account.configured %}
+        <button type="submit" class="btn btn-primary btn-lg w-100">
+            <i class="bi bi-magic me-2"></i>Quick Setup - Auto-Configure Everything
+        </button>
+        {% else %}
+        <div class="alert alert-success mb-0">
+            <i class="bi bi-check-circle me-2"></i>
+            <strong>API credentials already configured!</strong> Click "Auto-Complete Setup" above to finish.
+        </div>
+        {% endif %}
+    </form>
+</div>
+{% endif %}
+
+<!-- Test All Button -->
+<div class="card p-4 mb-4">
+    <h5><i class="bi bi-shield-check me-2"></i>Verify Configuration</h5>
+    <p class="text-muted">Test all configured credentials at once</p>
+    <hr>
+
+    <form method="POST" action="/smart-setup/test-all">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-outline-success w-100"
+                {% if setup_status.completed_steps == 0 %}disabled{% endif %}>
+            <i class="bi bi-check-all me-2"></i>Test All Connections
+        </button>
+    </form>
+
+    {% if setup_status.completed_steps == 0 %}
+    <small class="text-muted mt-2 d-block text-center">
+        Configure at least one credential to enable testing
+    </small>
+    {% endif %}
+</div>
+
+<!-- Setup Guide -->
+<div class="card p-4">
+    <h5><i class="bi bi-book me-2"></i>Setup Guide</h5>
+    <hr>
+
+    <div class="accordion" id="setupGuide">
+        <!-- Step 1: Anthropic API -->
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button {% if setup_status.next_action != 'anthropic_api_key' %}collapsed{% endif %}"
+                        type="button" data-bs-toggle="collapse" data-bs-target="#step1">
+                    <i class="bi bi-1-circle me-2"></i>
+                    Get Anthropic API Key
+                    {% if setup_status.credentials.anthropic_api_key.configured %}
+                        <span class="badge bg-success ms-2">✓</span>
+                    {% endif %}
+                </button>
+            </h2>
+            <div id="step1" class="accordion-collapse collapse {% if setup_status.next_action == 'anthropic_api_key' %}show{% endif %}">
+                <div class="accordion-body">
+                    <ol>
+                        <li>Go to <a href="https://console.anthropic.com" target="_blank">Anthropic Console</a></li>
+                        <li>Sign up or log in</li>
+                        <li>Navigate to <strong>Settings → API Keys</strong></li>
+                        <li>Click <strong>"Create Key"</strong></li>
+                        <li>Copy the key (starts with <code>sk-ant-</code>)</li>
+                        <li>Paste it in the Quick Configuration form above</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 2: Service Account -->
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button {% if setup_status.next_action != 'service_account' %}collapsed{% endif %}"
+                        type="button" data-bs-toggle="collapse" data-bs-target="#step2">
+                    <i class="bi bi-2-circle me-2"></i>
+                    Get Google Service Account
+                    {% if setup_status.credentials.service_account.configured %}
+                        <span class="badge bg-success ms-2">✓</span>
+                    {% endif %}
+                </button>
+            </h2>
+            <div id="step2" class="accordion-collapse collapse {% if setup_status.next_action == 'service_account' %}show{% endif %}">
+                <div class="accordion-body">
+                    <ol>
+                        <li>Go to <a href="https://console.cloud.google.com" target="_blank">Google Cloud Console</a></li>
+                        <li>Create a new project or select existing</li>
+                        <li>Enable <strong>Google Sheets API</strong> and <strong>Gmail API</strong></li>
+                        <li>Go to <strong>IAM & Admin → Service Accounts</strong></li>
+                        <li>Click <strong>"Create Service Account"</strong></li>
+                        <li>Give it a name (e.g., <code>quartz-email-bot</code>)</li>
+                        <li>Skip roles and permissions (click Continue)</li>
+                        <li>Click on the created service account</li>
+                        <li>Go to <strong>"Keys"</strong> tab</li>
+                        <li>Click <strong>"Add Key" → "Create New Key" → JSON</strong></li>
+                        <li>Download the JSON file</li>
+                        <li>Open it in a text editor and copy entire contents</li>
+                        <li>Paste it in the Quick Configuration form above</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 3: Auto-Create Sheet -->
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button {% if setup_status.next_action != 'google_sheets_id' %}collapsed{% endif %}"
+                        type="button" data-bs-toggle="collapse" data-bs-target="#step3">
+                    <i class="bi bi-3-circle me-2"></i>
+                    Auto-Create Google Sheet
+                    {% if setup_status.credentials.google_sheets_id.configured %}
+                        <span class="badge bg-success ms-2">✓</span>
+                    {% endif %}
+                </button>
+            </h2>
+            <div id="step3" class="accordion-collapse collapse {% if setup_status.next_action == 'google_sheets_id' %}show{% endif %}">
+                <div class="accordion-body">
+                    <p><strong>This happens automatically!</strong> 🎉</p>
+                    <p>When you submit the Quick Configuration form above (with API key + service account):</p>
+                    <ol>
+                        <li>A new Google Sheet is created in your Google account</li>
+                        <li>3 worksheets are added: <code>Customers</code>, <code>Email_Tracking</code>, <code>Email_Templates</code></li>
+                        <li>All required columns are added automatically</li>
+                        <li>The sheet is shared with your service account</li>
+                        <li>The Sheets ID is saved to your account</li>
+                    </ol>
+                    <p class="mb-0">No manual work required!</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 4: Gmail OAuth -->
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button {% if setup_status.next_action != 'gmail_token' %}collapsed{% endif %}"
+                        type="button" data-bs-toggle="collapse" data-bs-target="#step4">
+                    <i class="bi bi-4-circle me-2"></i>
+                    Authorize Gmail
+                    {% if setup_status.credentials.gmail_token.configured %}
+                        <span class="badge bg-success ms-2">✓</span>
+                    {% endif %}
+                </button>
+            </h2>
+            <div id="step4" class="accordion-collapse collapse {% if setup_status.next_action == 'gmail_token' %}show{% endif %}">
+                <div class="accordion-body">
+                    <p><strong>One-click authorization!</strong></p>
+                    <ol>
+                        <li>Click the "Authorize Gmail" button in the card above</li>
+                        <li>You'll be redirected to Google</li>
+                        <li>Select your Gmail account</li>
+                        <li>Grant "Send email" and "Read email" permissions</li>
+                        <li>You'll be redirected back automatically</li>
+                        <li>Done! Your Gmail is connected</li>
+                    </ol>
+                    <p class="mb-0 text-muted">
+                        <small>
+                            <i class="bi bi-shield-lock me-1"></i>
+                            Your Gmail password is never shared with us. OAuth tokens are encrypted and stored securely.
+                        </small>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="row g-3 mt-4">
+    <div class="col-md-6">
+        <a href="/settings" class="btn btn-outline-primary w-100">
+            <i class="bi bi-gear me-2"></i>Go to Full Settings
+        </a>
+    </div>
+    <div class="col-md-6">
+        <a href="/dashboard" class="btn btn-outline-secondary w-100">
+            <i class="bi bi-house me-2"></i>Go to Dashboard
+        </a>
+    </div>
+</div>
+
+{% endblock %}
